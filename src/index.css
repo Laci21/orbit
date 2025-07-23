@@ -48,6 +48,15 @@ body {
   text-shadow: 0 0 10px currentColor;
 }
 
+/* Animation delays */
+.animation-delay-75 {
+  animation-delay: 75ms;
+}
+
+.animation-delay-150 {
+  animation-delay: 150ms;
+}
+
 /* Scan line effect */
 @keyframes scan-line {
   0% { transform: translateY(-100%); }

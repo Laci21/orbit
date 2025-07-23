@@ -55,11 +55,6 @@ export const CrisisAlert: React.FC<CrisisAlertProps> = ({ isActive, tweetData })
                 alt="Video thumbnail" 
                 className="w-full h-64 object-cover"
               />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center shadow-lg">
-                  <Play className="w-8 h-8 text-white ml-1" fill="white" />
-                </div>
-              </div>
               <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
                 {tweetData.videoDuration}
               </div>
