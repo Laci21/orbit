@@ -58,8 +58,6 @@ export const crisisData = {
     retweets: '45.2K',
     replies: '18.9K',
     videoThumbnail: '/popbase-tweet.jpg',
-    videoThumbnail: './popbase-tweet.png',
-    videoThumbnail: '/src/assets/popbase-tweet.png',
     videoDuration: '0:14',
     views: '152.7M Views'
   },
