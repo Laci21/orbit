@@ -88,18 +88,3 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agents }) => {
     </div>
   );
 };
-                {agent.currentAction}
-              </div>
-            )}
-            
-            {agent.status === 'complete' && (
-              <div className="text-green-300 text-xs font-mono">
-                ✓ Task completed
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
