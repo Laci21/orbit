@@ -53,7 +53,7 @@ export const CrisisAlert: React.FC<CrisisAlertProps> = ({ isActive, tweetData })
               <img 
                 src={tweetData.videoThumbnail} 
                 alt="Video thumbnail" 
-                className="w-full h-48 object-cover opacity-80"
+                className="w-full h-64 object-cover"
               />
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center shadow-lg">
