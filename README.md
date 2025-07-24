@@ -94,6 +94,16 @@ Agent interactions are logged to `/tmp/orbit_run.log` during execution. The dash
 - **OpenAI GPT** - Natural language processing
 - **Docker** - Containerized deployment
 
+## 🧰 AI Tools Utilised During Development
+
+| # | Tool | Purpose in This Project |
+|---|------|-------------------------|
+| 1 | [Manus](https://manus.im) | Ideation: Generated and refined the initial hackathon concept |
+| 2 | [ChatPRD](https://www.chatprd.ai) | Drafted the very first Product Requirements Document |
+| 3 | [Bolt](https://bolt.new) | Auto-generated the early mock UI used as Orbit’s starting point |
+| 4 | [Cursor](https://cursor.sh) (o3 model) | Full-stack architecture planning |
+| 5 | [Claude Code](https://www.anthropic.com) (Sonnet 4) | Implemented code and integrated AGNTCY backend |
+
 ---
 
 **Powered by AGNTCY** - Demonstrating the future of AI-native enterprise applications.

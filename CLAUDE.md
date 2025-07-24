@@ -19,14 +19,52 @@ No test framework is currently configured in this project.
 
 ## Architecture & Key Components
 
-### Core Application Structure
-- **App.tsx** - Main application component managing crisis simulation state and timing
-- **main.tsx** - React application entry point
-- **mockData.ts** - Contains all simulation data including agents, crisis events, and timeline
+### Multi-Agent System Architecture
+The Orbit system uses an **event-driven, dependency-based architecture** with 6 AI agents communicating via SLIM transport:
 
-### Component Architecture
-The application uses a dashboard layout with specialized panels:
+#### Agent Communication Flow
+```
+Tweet with claim arrives
+         ↓
+    Ear-to-Ground Agent
+         ↓
+    ┌─────────────┐
+    ↓             ↓
+Fact Checker  Sentiment Analyst
+    ↓             ↓
+    ↓         (both complete)
+    ↓             ↓
+    ↓         Risk Score ←─┘
+    ↓
+Legal Counsel
+    
+(all complete) → Press Secretary
+```
 
+#### The 6 AI Agents
+1. **Ear-to-Ground Agent** - Monitors social media, detects crisis tweets, broadcasts initial crisis events
+2. **Sentiment Analyst** - Analyzes public sentiment from crisis tweets, provides ongoing sentiment updates
+3. **Fact Checker** - Verifies claims in crisis content, provides factual analysis
+4. **Risk Score Agent** - Calculates crisis severity/impact based on fact check + sentiment analysis
+5. **Legal Counsel Agent** - Reviews legal implications based on fact checker output
+6. **Press Secretary Agent** - Drafts official response statements using all agent outputs
+
+#### Event-Driven Dependencies
+- **crisis_detected** → Fact Checker + Sentiment Analyst (parallel)
+- **fact_check_complete** → Legal Counsel + Risk Score (partial dependency)
+- **sentiment_analysis_complete** → Risk Score (completes dependency)
+- **risk_score_complete** + **legal_review_complete** → Press Secretary
+
+#### SLIM Transport Communication
+- **SLIM Broker** - Central message hub (ghcr.io/agntcy/slim:0.3.15)
+- **Topic-based routing** - Each agent subscribes to relevant event topics
+- **Dual bridge pattern** - Transport bridge (A2A) + Broadcast bridge (events)
+- **Message format** - SLIMMessage with serialize() method for proper transport compatibility
+
+### Frontend Architecture
+The React dashboard provides real-time visualization of agent coordination:
+
+#### Core Components
 - **AgentPanel** - Displays AI agent status and current actions
 - **CrisisAlert** - Shows viral content that triggered the crisis
 - **SentimentDisplay** - Visualizes public sentiment analysis
@@ -34,20 +72,10 @@ The application uses a dashboard layout with specialized panels:
 - **StatementDraft** - Shows AI-generated response for approval
 - **Timeline** - Tracks crisis response progress
 
-### State Management
-The application uses React useState for local state management with automatic progression through crisis simulation steps. Key state includes:
-- Agent statuses and actions
-- Current simulation step
-- Mission timer
-- Publication status
-
-### Simulation Flow
-The crisis simulation auto-progresses through 5 steps:
-1. Crisis detection (3s delay)
-2. Sentiment analysis (step + 4s)
-3. Policy retrieval (step + 4s) 
-4. Statement drafting (step + 4s)
-5. User approval required
+#### State Management
+- Real-time agent status updates via gateway polling
+- Event-driven UI updates based on agent completion
+- Mission timer and crisis progression tracking
 
 ## Styling & UI
 
@@ -102,12 +130,46 @@ interface CrisisEvent {
 - **tailwind.config.js** - Tailwind CSS configuration scanning src files and index.html
 - **postcss.config.js** - PostCSS configuration for Tailwind processing
 
-## Demo Context
+## Demo Context & Crisis Scenario
 
 This is a hackathon/demo project specifically designed to showcase AGNTCY's multi-agent system capabilities. The application:
 - Uses simulated data only (no live APIs or social feeds)
-- Follows a predetermined narrative about a fictional crisis
-- Demonstrates agent discovery, trust verification, and secure communication concepts
+- Demonstrates real-time event-driven agent coordination
+- Shows dependency management and parallel processing in multi-agent systems
 - Targets PR/Communications professionals as the primary persona
 
-The current demo scenario involves a viral social media post about alleged executive misconduct, with agents working together to analyze sentiment, retrieve policies, and draft an appropriate response statement.
+### Crisis Scenario: Executive Misconduct Allegation
+
+**Initial Crisis:** A viral social media post surfaces alleging executive misconduct at a major company.
+
+**Agent Response Workflow:**
+
+1. **Crisis Detection (Immediate)**
+   - Ear-to-Ground agent detects viral post with serious allegations
+   - Broadcasts `crisis_detected` event to trigger coordinated response
+
+2. **Parallel Analysis Phase (0-30 seconds)**
+   - **Fact Checker**: Verifies claims, checks sources, assesses credibility
+   - **Sentiment Analyst**: Analyzes public reaction, tracks sentiment trends
+
+3. **Risk Assessment Phase (30-45 seconds)**
+   - **Risk Score Agent**: Calculates crisis severity using fact check + sentiment data
+   - **Legal Counsel Agent**: Reviews legal implications based on fact checker findings
+
+4. **Response Generation Phase (45-60 seconds)**
+   - **Press Secretary Agent**: Drafts official response using all agent outputs
+   - Considers: facts, sentiment, risk level, legal constraints
+
+5. **Human Approval (Manual)**
+   - Crisis management team reviews AI-generated response
+   - Approves, modifies, or requests revision before publication
+
+**Ongoing Monitoring:**
+- Sentiment Analyst continues processing new tweets for real-time sentiment updates
+- System adapts response strategy based on evolving public reaction
+
+**Key Demo Value:**
+- Shows autonomous agent coordination without human micromanagement
+- Demonstrates dependency resolution (agents wait for prerequisites)
+- Illustrates parallel processing for faster crisis response
+- Provides transparency into AI decision-making process

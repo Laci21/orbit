@@ -1,0 +1,9 @@
+# Basic dependencies for testing (without AGNTCY SDK)
+python-dotenv>=1.0.0
+aiofiles>=23.2.1
+typing-extensions>=4.12.2
+langchain-core>=0.3.0
+langchain-openai>=0.3.16
+langgraph>=0.4.1
+pydantic>=2.5.0
+openai>=1.3.0
