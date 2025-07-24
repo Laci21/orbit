@@ -1,0 +1,195 @@
+version: '3.8'
+
+services:
+  # AGNTCY Infrastructure Services
+  slim:
+    image: ghcr.io/agntcy/slim:0.3.15
+    ports:
+      - "46357:46357"
+    environment:
+      - SLIM_LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:46357/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  oasf:
+    image: agntcy/oasf-registry:latest
+    ports:
+      - "8080:8080" 
+    environment:
+      - OASF_LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  directory:
+    image: agntcy/agent-directory:latest
+    ports:
+      - "8081:8081"
+    environment:
+      - DIRECTORY_LOG_LEVEL=INFO
+    depends_on:
+      - oasf
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Orbit Agent Services
+  ear-to-ground:
+    build:
+      context: .
+      dockerfile: agents/ear_to_ground/Dockerfile
+    platform: linux/amd64
+    ports:
+      - "9001:9001"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SLIM_BROKER_URL=http://slim:46357
+      - OASF_REGISTRY_URL=http://oasf:8080
+      - AGENT_DIRECTORY_URL=http://directory:8081
+      - ORBIT_TWEET_FILE=/app/data/tweets_astronomer.json
+      - AGENT_PORT=9001
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      - slim
+      - oasf
+      - directory
+    restart: unless-stopped
+
+  sentiment-analyst:
+    build:
+      context: .
+      dockerfile: agents/sentiment_analyst/Dockerfile
+    platform: linux/amd64
+    ports:
+      - "9002:9002"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SLIM_BROKER_URL=http://slim:46357
+      - OASF_REGISTRY_URL=http://oasf:8080
+      - AGENT_DIRECTORY_URL=http://directory:8081
+      - AGENT_PORT=9002
+    depends_on:
+      - slim
+      - oasf
+      - directory
+    restart: unless-stopped
+
+  risk-score:
+    build:
+      context: .
+      dockerfile: agents/risk_score/Dockerfile
+    platform: linux/amd64
+    ports:
+      - "9003:9003"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SLIM_BROKER_URL=http://slim:46357
+      - OASF_REGISTRY_URL=http://oasf:8080
+      - AGENT_DIRECTORY_URL=http://directory:8081
+      - CRISIS_THRESHOLD=${CRISIS_THRESHOLD:-70}
+      - AGENT_PORT=9003
+    depends_on:
+      - slim
+      - oasf
+      - directory
+    restart: unless-stopped
+
+  fact-checker:
+    build:
+      context: .
+      dockerfile: agents/fact_checker/Dockerfile
+    platform: linux/amd64
+    ports:
+      - "9004:9004"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SLIM_BROKER_URL=http://slim:46357
+      - OASF_REGISTRY_URL=http://oasf:8080
+      - AGENT_DIRECTORY_URL=http://directory:8081
+      - AGENT_PORT=9004
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      - slim
+      - oasf
+      - directory
+    restart: unless-stopped
+
+  legal-counsel:
+    build:
+      context: .
+      dockerfile: agents/legal_counsel/Dockerfile
+    platform: linux/amd64
+    ports:
+      - "9005:9005"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SLIM_BROKER_URL=http://slim:46357
+      - OASF_REGISTRY_URL=http://oasf:8080
+      - AGENT_DIRECTORY_URL=http://directory:8081
+      - AGENT_PORT=9005
+    volumes:
+      - ./data:/app/data:ro
+    depends_on:
+      - slim
+      - oasf
+      - directory
+    restart: unless-stopped
+
+  press-secretary:
+    build:
+      context: .
+      dockerfile: agents/press_secretary/Dockerfile
+    platform: linux/amd64
+    ports:
+      - "9006:9006"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SLIM_BROKER_URL=http://slim:46357
+      - OASF_REGISTRY_URL=http://oasf:8080
+      - AGENT_DIRECTORY_URL=http://directory:8081
+      - AGENT_PORT=9006
+    depends_on:
+      - slim
+      - oasf
+      - directory
+    restart: unless-stopped
+
+  # Gateway Service (FastAPI + React UI)
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    platform: linux/amd64
+    ports:
+      - "8000:8000"  # FastAPI
+      - "5173:5173"  # Vite dev server
+    environment:
+      - SLIM_BROKER_URL=http://slim:46357
+      - OASF_REGISTRY_URL=http://oasf:8080
+      - AGENT_DIRECTORY_URL=http://directory:8081
+      - GATEWAY_HOST=0.0.0.0
+      - GATEWAY_PORT=8000
+    depends_on:
+      - slim
+      - oasf
+      - directory
+      - ear-to-ground
+      - sentiment-analyst
+      - risk-score
+      - fact-checker
+      - legal-counsel
+      - press-secretary
+    restart: unless-stopped
+
+networks:
+  default:
+    name: orbit-network
