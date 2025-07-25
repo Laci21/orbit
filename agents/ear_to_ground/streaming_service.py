@@ -100,23 +100,37 @@ class TweetStreamingService:
             
     async def _stream_tweets(self) -> None:
         """Stream tweets via SLIM transport."""
-        for tweet in self.tweets:
-            if not self._is_running:
-                break
-                
-            try:
-                await self._publish_tweet(tweet)
-                
-                # Variable delay between tweets (0.8x to 1.5x base rate) 
-                delay = self.tweet_rate * random.uniform(0.8, 1.5)
-                await asyncio.sleep(delay)
-                
-            except Exception as e:
-                logger.error(f"Error broadcasting tweet {tweet.get('id', 'unknown')}: {e}")
-                continue
-                
+        # Process only the first tweet for now to ensure clean flow
+        if not self.tweets:
+            logger.warning("No tweets available to process")
+            return
+            
+        tweet = self.tweets[0]  # Process only the first tweet
+        logger.info(f"Processing single tweet for crisis demo: {tweet.get('id', 'unknown')}")
+        
+        try:
+            await self._publish_tweet(tweet)
+        except Exception as e:
+            logger.error(f"Error processing tweet {tweet.get('id', 'unknown')}: {e}")
+            
+        # Original multi-tweet processing (commented out for now)
+        # for tweet in self.tweets:
+        #     if not self._is_running:
+        #         break
+        #         
+        #     try:
+        #         await self._publish_tweet(tweet)
+        #         
+        #         # Variable delay between tweets (0.8x to 1.5x base rate) 
+        #         delay = self.tweet_rate * random.uniform(0.8, 1.5)
+        #         await asyncio.sleep(delay)
+        #         
+        #     except Exception as e:
+        #         logger.error(f"Error broadcasting tweet {tweet.get('id', 'unknown')}: {e}")
+        #         continue
+        
         await self._publish_completion()
-        logger.info("Tweet streaming service completed successfully")
+        logger.info("Single tweet processing completed successfully")
         
     async def _publish_tweet(self, tweet: Dict[str, Any]) -> None:
         """Process a single tweet by calling agents directly via A2A."""
@@ -198,6 +212,7 @@ class TweetStreamingService:
                         press_response = await self._call_press_secretary(crisis_data, sentiment_result, fact_result, risk_result, legal_result)
                         if press_response:
                             # Store the final response for retrieval by gateway
+                            logger.info("Storing final Press Secretary response for gateway retrieval")
                             self.final_crisis_response = press_response
                             self._display_final_crisis_response(crisis_data, press_response)
                     else:
@@ -582,4 +597,5 @@ END_CRISIS_DATA"""
 
     def clear_final_response(self) -> None:
         """Clear the stored final response (for new crises)."""
+        logger.info("Clearing previous final response for new crisis")
         self.final_crisis_response = None

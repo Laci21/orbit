@@ -38,6 +38,7 @@ class CrisisState:
         self.started_at: Optional[datetime] = None
         self.final_response: Optional[Dict[str, Any]] = None
         self.last_update: Optional[datetime] = None
+        self.agent_progress: Dict[str, str] = {}  # Track which agents are working
 
 # Global crisis state
 crisis_state = CrisisState()
@@ -49,6 +50,7 @@ class CrisisStatusResponse(BaseModel):
     started_at: Optional[datetime]
     final_response: Optional[Dict[str, Any]]
     last_update: Optional[datetime]
+    agent_progress: Dict[str, str] = {}  # Which agents are currently working
 
 class TriggerRequest(BaseModel):
     tweet_content: Optional[str] = "BREAKING: Major allegations surface against company executive. Investigation needed immediately. #CrisisAlert"
@@ -61,7 +63,8 @@ async def get_crisis_status():
         status=crisis_state.status,
         started_at=crisis_state.started_at,
         final_response=crisis_state.final_response,
-        last_update=crisis_state.last_update
+        last_update=crisis_state.last_update,
+        agent_progress=crisis_state.agent_progress
     )
 
 @app.post("/api/crisis/trigger")
@@ -145,30 +148,38 @@ async def call_ear_to_ground_agent(tweet_content: str) -> Optional[Dict[str, Any
         return {"error": str(e)}
 
 async def monitor_crisis_progress():
-    """Monitor crisis progress by checking Ear-to-Ground status."""
+    """Monitor crisis progress with simple polling every 3 seconds."""
     try:
-        # Simple monitoring - wait for crisis completion
-        # In a real implementation, this would poll Ear-to-Ground for status updates
+        logger.info("Starting crisis monitoring with 3-second polling...")
         
-        # Give the workflow time to complete
-        for i in range(6):  # Check every 10 seconds for 1 minute
-            await asyncio.sleep(10)
-            logger.info(f"Crisis monitoring check {i+1}/6...")
+        # Simple polling every 3 seconds
+        for i in range(30):  # Check every 3 seconds for 90 seconds total
+            await asyncio.sleep(3)
+            logger.info(f"Crisis monitoring check {i+1}/30...")
             
-            # Try to get status/results from Ear-to-Ground
+            # Try to get final results from Ear-to-Ground
             final_result = await get_crisis_results_from_ear_to_ground()
+            
             if final_result and not final_result.get("error"):
-                crisis_state.final_response = final_result
-                crisis_state.status = "complete"
-                logger.info("Crisis orchestration completed successfully")
+                # Update last update time
                 crisis_state.last_update = datetime.now()
-                return
-        
-        # If we get here, the workflow didn't complete in time
-        logger.warning("Crisis monitoring timeout - no final results received after 60s")
-        crisis_state.status = "complete"  # Assume it completed, just didn't get results
+                
+                # Check if we found the Press Secretary response
+                if final_result.get("press_secretary_response"):
+                    crisis_state.final_response = final_result
+                    crisis_state.status = "complete"
+                    logger.info("✅ Crisis complete - Press Secretary response received!")
+                    return
+                else:
+                    logger.info(f"Got response but no Press Secretary data yet (check {i+1}/30)")
+            else:
+                logger.info(f"No response from Ear-to-Ground yet (check {i+1}/30)")
+         
+        # Timeout - mark as complete anyway
+        logger.warning("Crisis monitoring timeout after 90s - marking as complete")
+        crisis_state.status = "complete"
         crisis_state.last_update = datetime.now()
-        
+         
     except Exception as e:
         logger.error(f"Error monitoring crisis progress: {e}")
         crisis_state.status = "error"
@@ -177,7 +188,7 @@ async def monitor_crisis_progress():
 async def get_crisis_results_from_ear_to_ground() -> Optional[Dict[str, Any]]:
     """Get final crisis results from Ear-to-Ground orchestration."""
     try:
-        # Query Ear-to-Ground for status/results
+        # Query Ear-to-Ground for status/results including final crisis response
         request_payload = {
             "jsonrpc": "2.0",
             "method": "message/send",
@@ -188,7 +199,7 @@ async def get_crisis_results_from_ear_to_ground() -> Optional[Dict[str, Any]]:
                     "parts": [
                         {
                             "type": "text",
-                            "text": "Provide status and final results"
+                            "text": "Provide status and final results"  # This will trigger final response inclusion
                         }
                     ]
                 }
@@ -205,14 +216,63 @@ async def get_crisis_results_from_ear_to_ground() -> Optional[Dict[str, Any]]:
             
             if response.status_code == 200:
                 result = response.json()
-                logger.info("Retrieved crisis results from Ear-to-Ground")
-                return result
+                
+                # Try to extract the final crisis response from Ear-to-Ground metadata
+                final_crisis_response = None
+                if isinstance(result, dict) and "result" in result:
+                    result_data = result["result"]
+                    if isinstance(result_data, dict) and "metadata" in result_data:
+                        metadata = result_data["metadata"]
+                        if isinstance(metadata, dict) and "final_crisis_response" in metadata:
+                            final_crisis_response = metadata["final_crisis_response"]
+                            logger.info("Extracted final crisis response from Ear-to-Ground")
+                 
+                # Only proceed with extraction if we actually have final crisis response data
+                # If we have a final crisis response, extract the Press Secretary data
+                if final_crisis_response:
+                    press_secretary_data = extract_press_secretary_response(final_crisis_response)
+                    if press_secretary_data:
+                        logger.info("✅ Crisis response complete - Press Secretary data ready")
+                        return {"press_secretary_response": press_secretary_data}
+                    else:
+                        logger.warning("Press Secretary data not found in final response")
+                else:
+                    # No final crisis response in metadata yet
+                    pass  # Normal during polling - no need to log
+                
+                # Don't return the result if it doesn't have Press Secretary data
+                # This will make the polling continue
+                return None
             else:
                 logger.error(f"Failed to get results from Ear-to-Ground: {response.status_code}")
                 return None
                 
     except Exception as e:
         logger.error(f"Error getting crisis results: {e}")
+        return None
+
+def extract_press_secretary_response(final_crisis_response: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Extract Press Secretary response data from the final crisis response."""
+    try:
+        # The final_crisis_response should be the JSON-RPC response from Press Secretary
+        if isinstance(final_crisis_response, dict) and "result" in final_crisis_response:
+            result = final_crisis_response["result"]
+            
+            if isinstance(result, dict) and "metadata" in result:
+                metadata = result["metadata"]
+                
+                if isinstance(metadata, dict) and "press_response" in metadata:
+                    return metadata["press_response"]
+                else:
+                    logger.warning("❌ No press_response key in metadata")
+            else:
+                logger.warning("❌ No metadata in result or result is not dict")
+        else:
+            logger.warning("❌ No result key in final_crisis_response or not dict")
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error extracting Press Secretary response: {e}")
         return None
 
 @app.get("/health")

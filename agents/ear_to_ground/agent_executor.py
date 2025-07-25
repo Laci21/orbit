@@ -84,6 +84,8 @@ class EarToGroundAgentExecutor(AgentExecutor):
             # Check if this is a streaming request and trigger streaming service
             if self.streaming_service and ("stream" in prompt.lower() or "start" in prompt.lower() or "trigger" in prompt.lower()):
                 logger.info("Triggering crisis streaming workflow...")
+                # Clear any previous final response before starting new crisis
+                self.streaming_service.clear_final_response()
                 # Start streaming service in background (don't await)
                 import asyncio
                 try:
@@ -94,11 +96,30 @@ class EarToGroundAgentExecutor(AgentExecutor):
                     logger.error(f"Failed to start streaming service: {e}")
                     agent_response = f"{agent_response} - Error starting crisis streaming: {e}"
             
+            # Check if this is a status request that should include final response
+            elif "status" in prompt.lower():
+                if self.streaming_service:
+                    final_response = self.streaming_service.get_final_response()
+                    if final_response:
+                        # Include the final crisis response in the agent response metadata
+                        agent_response = f"{agent_response} - Final crisis response available"
+                        # We'll attach this in the message metadata below
+                    else:
+                        agent_response = f"{agent_response} - No final response available yet"
+            
             # Create message following Coffee AGNTCY pattern
+            message_metadata = {"name": self.agent_card["name"]}
+            
+            # If we have a final response from streaming service, include it
+            if self.streaming_service and "status" in prompt.lower():
+                final_response = self.streaming_service.get_final_response()
+                if final_response:
+                    message_metadata["final_crisis_response"] = final_response
+            
             message = Message(
                 messageId=str(uuid4()),
                 role=Role.agent,
-                metadata={"name": self.agent_card["name"]},
+                metadata=message_metadata,
                 parts=[Part(TextPart(text=agent_response))]
             )
             

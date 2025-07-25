@@ -191,6 +191,7 @@ function App() {
             isActive={crisisStatus?.status === 'complete'}
             isPublished={isPublished}
             draftContent={crisisStatus?.final_response ? "AI-generated response ready for review" : crisisData.draftStatement}
+            finalResponse={crisisStatus?.final_response}
             onApprove={handleApprove}
           />
         </div>

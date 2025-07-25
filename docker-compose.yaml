@@ -161,7 +161,7 @@ services:
       - GATEWAY_PORT=8000
       - EAR_TO_GROUND_URL=http://ear-to-ground:9001
     volumes:
-      - ./gateway:/app/gateway:cached  # Enable hot reload for gateway code
+      - ./:/app:cached  # Enable hot reload for gateway code
     depends_on:
       - ear-to-ground
       - sentiment-analyst
@@ -170,6 +170,8 @@ services:
       - legal-counsel
       - press-secretary
     restart: unless-stopped
+    command: >
+      sh -c "watchfiles --filter python 'python -m gateway.main' /app"
 
 networks:
   default:
