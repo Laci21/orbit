@@ -34,13 +34,12 @@ Success = the audience can watch agents discover, analyse, debate and publish a 
 | 5 | Legal Counsel | Assess legal implications and response constraints | `orbit.fact.complete` | `orbit.legal.complete` |
 | 6 | Press Secretary | Draft official response using all agent outputs | `orbit.risk.complete`, `orbit.legal.complete` | `orbit.response.ready` |
 
-**Event-Driven Dependencies:**
-- Crisis detected → Fact Checker + Sentiment Analyst (parallel)
-- Fact check complete → Legal Counsel + Risk Score (partial dependency)
-- Sentiment analysis complete → Risk Score (completes dependency)
-- Risk score complete + Legal review complete → Press Secretary
+**Direct A2A Dependencies:**
+- Crisis detected → Fact Checker + Sentiment Analyst (parallel, direct calls)
+- Fact check complete → Legal Counsel (automatic direct call)
+- Risk Score + Press Secretary → Will be implemented with direct calls
 
-All agents use **AGNTCY App SDK** with **SLIM transport** for event-driven communication.
+All agents use **AGNTCY App SDK** with **direct JSON-RPC A2A communication**.
 
 ---
 
@@ -67,18 +66,16 @@ All agents use **AGNTCY App SDK** with **SLIM transport** for event-driven commu
     └─ agents/press_secretary/ (Transport + Broadcast)
 ```
 
-**Event-Driven Communication Flow:**
-1. **Ear-to-Ground** detects crisis → publishes `orbit.crisis.detected`
-2. **Sentiment Analyst** + **Fact Checker** subscribe to crisis events → process in parallel
-3. **Risk Score Agent** waits for BOTH fact + sentiment completion events
-4. **Legal Counsel** processes independently after fact check complete
-5. **Press Secretary** waits for BOTH risk + legal completion events
-6. **Gateway** polls agent status and serves UI updates
+**Direct A2A Communication Flow:**
+1. **Ear-to-Ground** detects crisis → calls Sentiment Analyst + Fact Checker directly (parallel)
+2. **Fact Checker** completes analysis → calls Legal Counsel directly
+3. **Risk Score Agent** will be called when implemented (requires both sentiment + fact data)
+4. **Press Secretary** will be called when Risk Score + Legal Counsel complete
+5. **Gateway** polls agent status and serves UI updates
 
 Docker-Compose services:
-1. `slim` – SLIM broker (central message hub)
-2. Individual agent services (6 agents with SLIM transport)
-3. `gateway` – FastAPI REST facade + React UI
+1. Individual agent services (6 agents with direct A2A communication)
+2. `gateway` – FastAPI REST facade + React UI
 
 ---
 

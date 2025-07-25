@@ -49,10 +49,8 @@ graph TD
   Risk --> |"JSON-RPC A2A"| Press
   Legal --> |"JSON-RPC A2A"| Press
   
-  Risk --> |"risk_score_complete"| SLIM
-  Legal --> |"legal_review_complete"| SLIM
-  
-  SLIM --> |"risk_score_complete\n+ legal_review_complete"| Press
+  Risk --> |"JSON-RPC A2A"| Press
+  Legal --> |"JSON-RPC A2A"| Press
   
   TweetData --> Ear
   Playbook --> Fact

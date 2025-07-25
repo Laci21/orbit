@@ -66,16 +66,48 @@ class SentimentAnalystAgentExecutor(AgentExecutor):
             event_queue.enqueue_event(task)
             
         try:
-            # Simple agent invocation following lungo pattern
-            output = await self.agent.ainvoke(prompt)
-            
-            # Create standard response message
-            message = Message(
-                messageId=str(uuid4()),
-                role=Role.agent,
-                metadata={"name": self.agent_card["name"]},
-                parts=[Part(TextPart(text=output))]
-            )
+            # Check if this is a crisis sentiment analysis request
+            if "Please analyze the sentiment of this crisis content:" in prompt:
+                # Extract crisis content and perform sentiment analysis
+                content_start = prompt.find("Please analyze the sentiment of this crisis content:") + len("Please analyze the sentiment of this crisis content:")
+                content = prompt[content_start:].strip()
+                
+                crisis_data = {
+                    "text": content,
+                    "content": content,
+                    "crisis_id": "unknown"  # Could be extracted from prompt if needed
+                }
+                
+                # Perform sentiment analysis
+                sentiment_result = await self.agent.analyze_crisis_sentiment(crisis_data)
+                
+                # Create response with sentiment analysis results
+                response_text = f"Sentiment analysis completed. " \
+                               f"Overall sentiment: {sentiment_result.get('overall_sentiment', 0.0):.2f}, " \
+                               f"Reputational risk: {sentiment_result.get('reputational_risk', 'unknown')}, " \
+                               f"Key emotions: {', '.join(sentiment_result.get('key_emotions', []))}"
+                
+                message = Message(
+                    messageId=str(uuid4()),
+                    role=Role.agent,
+                    metadata={
+                        "name": self.agent_card["name"],
+                        "sentiment_analysis": sentiment_result,
+                        "crisis_id": crisis_data.get("crisis_id")
+                    },
+                    parts=[Part(TextPart(text=response_text))]
+                )
+            else:
+                # Regular workflow processing for general queries
+                output = await self.agent.ainvoke(prompt)
+                
+                # Create standard response message
+                message = Message(
+                    messageId=str(uuid4()),
+                    role=Role.agent,
+                    metadata={"name": self.agent_card["name"]},
+                    parts=[Part(TextPart(text=output))]
+                )
             
             logger.info("agent output message: %s", message)
             event_queue.enqueue_event(message)

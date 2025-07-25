@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from typing import Dict, List, Any, Literal
-from datetime import datetime
+from datetime import datetime, timezone
 
 from langgraph.graph import MessagesState, StateGraph, END
 from langchain_core.messages import AIMessage, HumanMessage
@@ -212,7 +212,7 @@ Respond with ONLY the JSON object, no additional text or explanation."""
                     # Convert to dict and add metadata
                     sentiment_analysis = validated_response.model_dump()
                     sentiment_analysis.update({
-                        "analysis_timestamp": datetime.now(datetime.UTC).isoformat(),
+                        "analysis_timestamp": datetime.now(timezone.utc).isoformat(),
                         "content_analyzed": content[:200] + "..." if len(content) > 200 else content,
                         "analysis_model": "gpt-4o-mini"
                     })
@@ -245,7 +245,7 @@ Respond with ONLY the JSON object, no additional text or explanation."""
             "confidence": 0.0,
             "reputational_risk": "low",  # Use valid enum value
             "error": error_message,
-            "analysis_timestamp": datetime.now(datetime.UTC).isoformat()
+            "analysis_timestamp": datetime.now(timezone.utc).isoformat()
         }
         return error_response
             

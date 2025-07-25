@@ -1,18 +1,19 @@
-"""Configuration for the Sentiment Analyst agent."""
+"""Configuration for the Fact Checker agent."""
 
 import os
 from typing import Optional
 
 
-class SentimentAnalystConfig:
-    """Configuration class for the Sentiment Analyst agent."""
+class FactCheckerConfig:
+    """Configuration class for the Fact Checker agent."""
     
     def __init__(self):
-        self.agent_port: int = int(os.getenv("AGENT_PORT", "9002"))
-        self.transport_endpoint: str = os.getenv("SLIM_BROKER_URL", "http://localhost:46357")
-        self.broadcast_topic: str = os.getenv("BROADCAST_TOPIC", "orbit.sentiment.complete")
-        self.crisis_topic: str = os.getenv("CRISIS_TOPIC", "orbit.crisis.detected")
+        self.agent_port: int = int(os.getenv("AGENT_PORT", "9004"))
         self.azure_openai_api_key: Optional[str] = os.getenv("AZURE_OPENAI_API_KEY")
+        
+        # Agent endpoints for direct A2A calls
+        self.legal_counsel_endpoint = os.getenv("LEGAL_COUNSEL_URL", "http://legal-counsel:9005")
+        self.risk_score_endpoint = os.getenv("RISK_SCORE_URL", "http://risk-score:9003")
         
         # Validate required configuration
         self._validate()

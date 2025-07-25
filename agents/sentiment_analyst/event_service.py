@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -92,7 +92,7 @@ class SentimentEventService:
         completion_data = {
             "event_type": "sentiment_complete",
             "agent_id": "sentiment-analyst-agent",
-            "timestamp": datetime.now(datetime.UTC).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "crisis_id": crisis_id,
             "analysis": sentiment_result
         }

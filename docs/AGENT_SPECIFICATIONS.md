@@ -4,17 +4,16 @@ This document details the specifications for each of the 6 AI agents in the Orbi
 
 ## System Overview
 
-The Orbit system uses an **event-driven architecture** where agents coordinate through SLIM transport messaging. Each agent has specific dependencies and triggers, creating a coordinated response workflow for crisis management.
+The Orbit system uses a **direct agent communication architecture** where AI agents coordinate through JSON-RPC A2A calls to handle PR crises autonomously. Each agent has specific dependencies and triggers, creating a coordinated response workflow for crisis management.
 
-## Communication Topics
+## Communication Pattern
 
-### SLIM Topics Used
-- `orbit.crisis.detected` - Initial crisis detection events
-- `orbit.fact.complete` - Fact checking completion events  
-- `orbit.sentiment.complete` - Sentiment analysis completion events
-- `orbit.risk.complete` - Risk score completion events
-- `orbit.legal.complete` - Legal review completion events
-- `orbit.response.ready` - Press response ready events
+### Direct A2A Communication
+- Agents call each other directly via HTTP JSON-RPC endpoints
+- Ear-to-Ground triggers Sentiment Analyst and Fact Checker in parallel
+- Fact Checker automatically calls Legal Counsel after analysis
+- Risk Score will be called once implemented (requires both sentiment + fact data)
+- Press Secretary will be called once Risk Score and Legal Counsel complete
 
 ## Agent Specifications
 
@@ -56,7 +55,7 @@ The Orbit system uses an **event-driven architecture** where agents coordinate t
 
 **Technologies:**
 - AGNTCY App SDK
-- SLIM transport
+- Direct A2A JSON-RPC calls
 - LangGraph for content analysis
 - JSON data processing
 
@@ -114,7 +113,7 @@ The Orbit system uses an **event-driven architecture** where agents coordinate t
 ### 3. Fact Checker Agent
 
 **Purpose:** Claim verification and source validation
-**Implementation Status:** ⏳ Pending
+**Implementation Status:** ✅ Complete
 
 **Responsibilities:**
 - Verify factual claims in crisis content
@@ -123,13 +122,13 @@ The Orbit system uses an **event-driven architecture** where agents coordinate t
 - Flag misinformation or unsubstantiated claims
 
 **Triggers:**
-- `orbit.crisis.detected` events
+- Direct A2A calls from Ear-to-Ground agent
 
 **Dependencies:**
 - Crisis claims from Ear-to-Ground agent
 
-**Publishes to:**
-- `orbit.fact.complete`
+**Calls:**
+- Legal Counsel agent (automatically after fact checking)
 
 **Message Format:**
 ```json
@@ -326,11 +325,11 @@ graph TD
 
 ## Implementation Priority
 
-1. ✅ **Ear-to-Ground Agent** - Complete (SLIM broadcasting working)
-2. 🔄 **Sentiment Analyst Agent** - In Progress (next priority)
-3. ⏳ **Fact Checker Agent** - High priority (enables Legal Counsel)
-4. ⏳ **Risk Score Agent** - Medium priority (dependency management)
-5. ⏳ **Legal Counsel Agent** - Medium priority (parallel with Risk Score)
+1. ✅ **Ear-to-Ground Agent** - Complete (direct A2A calls working)
+2. ✅ **Fact Checker Agent** - Complete (calls Legal Counsel automatically)
+3. 🔄 **Sentiment Analyst Agent** - In Progress (next priority)
+4. ⏳ **Risk Score Agent** - Medium priority (will use direct A2A calls)
+5. ⏳ **Legal Counsel Agent** - Medium priority (called by Fact Checker)
 6. ⏳ **Press Secretary Agent** - Final integration (requires all dependencies)
 
 ## Testing Strategy

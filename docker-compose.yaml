@@ -28,7 +28,10 @@ services:
     ports:
       - "9001:9001"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - ORBIT_TWEET_FILE=/app/data/tweets_astronomer.json
       - AGENT_PORT=9001
       - SENTIMENT_ANALYST_URL=http://sentiment-analyst:9002
@@ -48,7 +51,10 @@ services:
     ports:
       - "9002:9002"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - AGENT_PORT=9002
     volumes:
       - ./:/app:cached
@@ -64,7 +70,10 @@ services:
     ports:
       - "9003:9003"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - CRISIS_THRESHOLD=${CRISIS_THRESHOLD:-70}
       - AGENT_PORT=9003
     restart: unless-stopped
@@ -77,13 +86,19 @@ services:
     ports:
       - "9004:9004"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - AGENT_PORT=9004
       - LEGAL_COUNSEL_URL=http://legal-counsel:9005
       - RISK_SCORE_URL=http://risk-score:9003
     volumes:
       - ./data:/app/data:ro
+      - ./:/app:cached
     restart: unless-stopped
+    command: >
+      sh -c "watchfiles --filter python 'python -m agents.fact_checker.server' /app"
 
   legal-counsel:
     build:
@@ -93,7 +108,10 @@ services:
     ports:
       - "9005:9005"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - AGENT_PORT=9005
       - PRESS_SECRETARY_URL=http://press-secretary:9006
     volumes:
@@ -108,7 +126,10 @@ services:
     ports:
       - "9006:9006"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - AGENT_PORT=9006
     restart: unless-stopped
 
