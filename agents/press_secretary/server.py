@@ -1,4 +1,4 @@
-"""Server for the Sentiment Analyst agent."""
+"""Server for the Press Secretary agent."""
 
 import asyncio
 import logging
@@ -12,20 +12,20 @@ from a2a.server.apps import A2AStarletteApplication
 from a2a.server.tasks import InMemoryTaskStore
 from dotenv import load_dotenv
 
-from agents.sentiment_analyst.agent_executor import SentimentAnalystAgentExecutor
-from agents.sentiment_analyst.card import AGENT_CARD
-from agents.sentiment_analyst.config import SentimentAnalystConfig
+from agents.press_secretary.agent_executor import PressSecretaryAgentExecutor
+from agents.press_secretary.card import AGENT_CARD
+from agents.press_secretary.config import PressSecretaryConfig
 
 load_dotenv()
 
-logger = logging.getLogger("orbit.sentiment_analyst_agent.server")
+logger = logging.getLogger("orbit.press_secretary_agent.server")
 
 
-class SentimentAnalystServer:
-    """Server for the Sentiment Analyst agent."""
+class PressSecretaryServer:
+    """Server for the Press Secretary agent."""
     
-    def __init__(self, config: Optional[SentimentAnalystConfig] = None):
-        self.config = config or SentimentAnalystConfig()
+    def __init__(self, config: Optional[PressSecretaryConfig] = None):
+        self.config = config or PressSecretaryConfig()
         self.app = None
         self._shutdown_event = asyncio.Event()
         
@@ -39,15 +39,15 @@ class SentimentAnalystServer:
         signal.signal(signal.SIGTERM, signal_handler)
         
     async def start(self) -> None:
-        """Start the Sentiment Analyst agent server."""
-        logger.info(f"Starting Sentiment Analyst agent on port {self.config.agent_port}")
+        """Start the Press Secretary agent server."""
+        logger.info(f"Starting Press Secretary agent on port {self.config.agent_port}")
         
         # Setup signal handlers
         self._setup_signal_handlers()
         
         # Create A2A application  
         request_handler = DefaultRequestHandler(
-            agent_executor=SentimentAnalystAgentExecutor(),
+            agent_executor=PressSecretaryAgentExecutor(),
             agent_card=AGENT_CARD,
             task_store=InMemoryTaskStore()
         )
@@ -71,18 +71,14 @@ class SentimentAnalystServer:
             logger.error(f"Server error: {e}")
             raise
         finally:
-            logger.info("Sentiment Analyst agent server stopped")
-            
+            logger.info("Press Secretary agent server stopped")
+    
     async def stop(self) -> None:
-        """Stop the Sentiment Analyst agent server."""
+        """Stop the Press Secretary agent server."""
         self._shutdown_event.set()
 
 
+# Main execution
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    
-    server = SentimentAnalystServer()
-    asyncio.run(server.start())
+    server = PressSecretaryServer()
+    asyncio.run(server.start()) 

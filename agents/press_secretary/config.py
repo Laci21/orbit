@@ -1,14 +1,16 @@
-"""Configuration for the Sentiment Analyst agent."""
+"""Configuration for the Press Secretary agent."""
 
 import os
+from typing import Optional
 
 
-class SentimentAnalystConfig:
-    """Configuration class for the Sentiment Analyst agent."""
+class PressSecretaryConfig:
+    """Configuration class for the Press Secretary agent."""
     
     def __init__(self):
+        """Initialize Press Secretary configuration from environment variables."""
         # Agent configuration
-        self.agent_port: int = int(os.getenv("AGENT_PORT", "9002"))
+        self.agent_port: int = int(os.getenv("AGENT_PORT", "9006"))
         
         # Azure OpenAI configuration
         self.azure_openai_api_key: str = os.getenv("AZURE_OPENAI_API_KEY", "")
@@ -31,4 +33,4 @@ class SentimentAnalystConfig:
             raise ValueError("AZURE_OPENAI_ENDPOINT environment variable is required")
             
         if self.agent_port <= 0 or self.agent_port > 65535:
-            raise ValueError(f"Invalid agent port: {self.agent_port}")
+            raise ValueError(f"Invalid agent port: {self.agent_port}") 

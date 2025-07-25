@@ -35,6 +35,7 @@ class TweetStreamingService:
         self.sentiment_analyst_endpoint = os.getenv("SENTIMENT_ANALYST_URL", "http://sentiment-analyst:9002")
         self.fact_checker_endpoint = os.getenv("FACT_CHECKER_URL", "http://fact-checker:9004")
         self.risk_score_endpoint = os.getenv("RISK_SCORE_URL", "http://risk-score:9003")
+        self.press_secretary_endpoint = os.getenv("PRESS_SECRETARY_URL", "http://press-secretary:9006")
         
     async def start(self) -> None:
         """Start the tweet streaming service."""
@@ -182,7 +183,16 @@ class TweetStreamingService:
                 
                 # Call Risk Score if both analyses completed
                 if sentiment_result is not None and fact_result is not None:
-                    await self._call_risk_score(crisis_data, sentiment_result, fact_result)
+                    risk_result = await self._call_risk_score(crisis_data, sentiment_result, fact_result)
+                    
+                    # Extract legal counsel data from fact result (fact checker calls legal counsel)
+                    legal_result = self._extract_legal_counsel_data(fact_result)
+                    
+                    # Call Press Secretary with all data if risk assessment succeeded
+                    if risk_result is not None and legal_result is not None:
+                        await self._call_press_secretary(crisis_data, sentiment_result, fact_result, risk_result, legal_result)
+                    else:
+                        logger.error(f"Cannot call Press Secretary - missing data. Risk: {risk_result is not None}, Legal: {legal_result is not None}")
                 else:
                     logger.error(f"Cannot call Risk Score - missing analysis data. Sentiment: {sentiment_result is not None}, Fact: {fact_result is not None}")
                     
@@ -391,6 +401,131 @@ class TweetStreamingService:
             logger.error(f"Error calling Risk Score: {e}")
             return {"error": str(e)}
     
+    def _extract_legal_counsel_data(self, fact_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract legal counsel data from fact checker response (fact checker calls legal counsel)."""
+        try:
+            # Check if legal data is already present in fact result
+            if isinstance(fact_result, dict):
+                if 'result' in fact_result and isinstance(fact_result['result'], dict):
+                    result_data = fact_result['result']
+                    if 'message' in result_data and 'metadata' in result_data['message']:
+                        metadata = result_data['message']['metadata']
+                        if 'legal_review' in metadata:
+                            return metadata['legal_review']
+                            
+            # For demo purposes, return a mock legal assessment
+            # In production, this would wait for or retrieve actual legal counsel results
+            mock_legal_review = {
+                "legal_risk": "medium",
+                "compliance_issues": [],
+                "recommended_approach": "cautious_acknowledgment",
+                "restrictions": [
+                    "avoid admitting fault",
+                    "preserve document retention"
+                ],
+                "escalation_needed": False,
+                "external_counsel": False
+            }
+            
+            logger.info("Using mock legal counsel data for demo")
+            return mock_legal_review
+            
+        except Exception as e:
+            logger.error(f"Error extracting legal counsel data: {e}")
+            return None
+    
+    async def _call_press_secretary(self, crisis_data: Dict[str, Any], sentiment_result: Dict[str, Any], 
+                                  fact_result: Dict[str, Any], risk_result: Dict[str, Any], 
+                                  legal_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the Press Secretary agent with all comprehensive crisis analysis data."""
+        try:
+            # Extract analysis data from each agent response
+            sentiment_analysis = self._extract_analysis_data(sentiment_result, 'sentiment_analysis')
+            fact_analysis = self._extract_analysis_data(fact_result, 'fact_analysis') 
+            risk_assessment = self._extract_analysis_data(risk_result, 'risk_assessment')
+            
+            # Prepare comprehensive crisis data package for Press Secretary
+            comprehensive_data = {
+                "crisis_id": crisis_data.get("crisis_id", "unknown"),
+                "crisis_data": crisis_data,
+                "sentiment_analysis": sentiment_analysis,
+                "fact_analysis": fact_analysis,
+                "risk_assessment": risk_assessment,
+                "legal_review": legal_result,
+                "timestamp": crisis_data.get("timestamp", "")
+            }
+            
+            # Create prompt for Press Secretary
+            prompt = f"""Please generate official crisis response based on comprehensive analysis.
+
+CRISIS_DATA:
+{json.dumps(comprehensive_data, indent=2)}
+END_CRISIS_DATA"""
+            
+            # JSON-RPC request payload for Press Secretary
+            request_payload = {
+                "jsonrpc": "2.0",
+                "method": "message/send",
+                "params": {
+                    "message": {
+                        "messageId": f"press-response-{crisis_data.get('crisis_id', 'unknown')}",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": prompt
+                            }
+                        ]
+                    }
+                },
+                "id": 1
+            }
+            
+            # Make HTTP request to Press Secretary agent
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.press_secretary_endpoint}/",
+                    json=request_payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status == 200:
+                        press_response = await response.json()
+                        logger.info(f"🎯 FINAL CRISIS RESPONSE GENERATED for crisis {crisis_data.get('crisis_id', 'unknown')}")
+                        logger.info(f"Press Secretary response received - this is the final output for demo!")
+                        return press_response
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Press Secretary call failed: {response.status} - {error_text}")
+                        return None
+                        
+        except Exception as e:
+            logger.error(f"Error calling Press Secretary agent: {e}")
+            return None
+    
+    def _extract_analysis_data(self, agent_result: Dict[str, Any], analysis_key: str) -> Dict[str, Any]:
+        """Extract analysis data from agent response."""
+        try:
+            if isinstance(agent_result, dict):
+                # Check for A2A response format
+                if 'result' in agent_result and isinstance(agent_result['result'], dict):
+                    result_data = agent_result['result']
+                    if 'message' in result_data and 'metadata' in result_data['message']:
+                        metadata = result_data['message']['metadata']
+                        if analysis_key in metadata:
+                            return metadata[analysis_key]
+                    elif analysis_key in result_data:
+                        return result_data[analysis_key]
+                elif analysis_key in agent_result:
+                    return agent_result[analysis_key]
+            
+            logger.warning(f"Could not extract {analysis_key} from agent result")
+            return {}
+            
+        except Exception as e:
+            logger.error(f"Error extracting {analysis_key}: {e}")
+            return {}
+
     def stop(self) -> None:
         """Stop the streaming service."""
         self._is_running = False

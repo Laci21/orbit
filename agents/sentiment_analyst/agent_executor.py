@@ -1,7 +1,6 @@
 """Agent executor for the Sentiment Analyst agent."""
 
 import logging
-from typing import Optional
 from uuid import uuid4
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -14,6 +13,7 @@ from a2a.types import (
     InternalError,
     Message,
     Role,
+    Task,
     TextPart,
     Part,
     Task
@@ -24,6 +24,7 @@ from a2a.utils import (
 
 from agents.sentiment_analyst.agent import SentimentAnalystAgent
 from agents.sentiment_analyst.card import AGENT_CARD
+from agents.sentiment_analyst.config import SentimentAnalystConfig
 
 logger = logging.getLogger("orbit.sentiment_analyst_agent.agent_executor")
 
@@ -34,8 +35,9 @@ class SentimentAnalystAgentExecutor(AgentExecutor):
     def __init__(self):
         self.agent = SentimentAnalystAgent()
         self.agent_card = AGENT_CARD.model_dump(mode="json", exclude_none=True)
+        self.config = SentimentAnalystConfig()
         
-    def _validate_request(self, context: RequestContext) -> Optional[JSONRPCResponse]:
+    def _validate_request(self, context: RequestContext) -> JSONRPCResponse | None:
         """Validate incoming request."""
         if not context or not context.message or not context.message.parts:
             logger.error("Invalid request parameters: %s", context)
@@ -120,6 +122,6 @@ class SentimentAnalystAgentExecutor(AgentExecutor):
         self, 
         request: RequestContext, 
         event_queue: EventQueue
-    ) -> Optional[Task]:
+    ) -> Task | None:
         """Cancel agent execution."""
         raise ServerError(error=UnsupportedOperationError())

@@ -10,7 +10,6 @@ from uvicorn import Config, Server
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.tasks import InMemoryTaskStore
-from agntcy_app_sdk.factory import GatewayFactory
 from dotenv import load_dotenv
 
 from agents.ear_to_ground.agent_executor import EarToGroundAgentExecutor
@@ -20,9 +19,6 @@ from agents.ear_to_ground.streaming_service import TweetStreamingService
 
 load_dotenv()
 
-# Initialize a multi-protocol, multi-transport gateway factory.
-factory = GatewayFactory()
-
 logger = logging.getLogger(__name__)
 
 
@@ -31,7 +27,6 @@ class EarToGroundServer:
     
     def __init__(self, config: Optional[EarToGroundConfig] = None):
         self.config = config or EarToGroundConfig()
-        self.transport = None
         self.app = None
         self.streaming_service = None
         self._shutdown_event = asyncio.Event()
@@ -63,9 +58,6 @@ class EarToGroundServer:
             http_handler=request_handler
         )
         
-        # Create transport
-        self.transport = factory.create_transport("SLIM", endpoint=self.config.transport_endpoint)
-        
         # Start HTTP server for direct A2A calls
         config = Config(
             app=self.app.build(), 
@@ -75,7 +67,7 @@ class EarToGroundServer:
         )
         userver = Server(config)
         
-        # Create streaming service (no SLIM transport needed)
+        # Create streaming service
         self.streaming_service = TweetStreamingService(None, None)
         
         # Run HTTP server and streaming service concurrently
