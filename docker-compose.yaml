@@ -1,23 +1,23 @@
 version: '3.8'
 
 services:
-  # AGNTCY Infrastructure Services - only SLIM is needed
-  slim:
-    image: ghcr.io/agntcy/slim:0.3.15
-    container_name: slim
-    ports:
-      - "46357:46357"
-    environment:
-      - PASSWORD=${SLIM_GATEWAY_PASSWORD:-dummy_password}
-      - CONFIG_PATH=/config.yaml
-    volumes:
-      - ./config/docker/slim/server-config.yaml:/config.yaml
-    command: ["/slim", "--config", "/config.yaml"]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:46357/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+  # AGNTCY Infrastructure Services - SLIM removed (using direct A2A communication)
+  # slim:
+  #   image: ghcr.io/agntcy/slim:0.3.15
+  #   container_name: slim
+  #   ports:
+  #     - "46357:46357"
+  #   environment:
+  #     - PASSWORD=${SLIM_GATEWAY_PASSWORD:-dummy_password}
+  #     - CONFIG_PATH=/config.yaml
+  #   volumes:
+  #     - ./config/docker/slim/server-config.yaml:/config.yaml
+  #   command: ["/slim", "--config", "/config.yaml"]
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:46357/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
 
   # Orbit Agent Services
   ear-to-ground:
@@ -29,14 +29,13 @@ services:
       - "9001:9001"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SLIM_BROKER_URL=http://slim:46357
       - ORBIT_TWEET_FILE=/app/data/tweets_astronomer.json
       - AGENT_PORT=9001
+      - SENTIMENT_ANALYST_URL=http://sentiment-analyst:9002
+      - FACT_CHECKER_URL=http://fact-checker:9004
     volumes:
       - ./data:/app/data:ro
       - ./:/app:cached
-    depends_on:
-      - slim
     restart: unless-stopped
     command: >
       sh -c "watchfiles --filter python 'python -m agents.ear_to_ground.server' /app"
@@ -50,11 +49,12 @@ services:
       - "9002:9002"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SLIM_BROKER_URL=http://slim:46357
       - AGENT_PORT=9002
-    depends_on:
-      - slim
+    volumes:
+      - ./:/app:cached
     restart: unless-stopped
+    command: >
+      sh -c "watchfiles --filter python 'python -m agents.sentiment_analyst.server' /app"
 
   risk-score:
     build:
@@ -65,11 +65,8 @@ services:
       - "9003:9003"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SLIM_BROKER_URL=http://slim:46357
       - CRISIS_THRESHOLD=${CRISIS_THRESHOLD:-70}
       - AGENT_PORT=9003
-    depends_on:
-      - slim
     restart: unless-stopped
 
   fact-checker:
@@ -81,12 +78,11 @@ services:
       - "9004:9004"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SLIM_BROKER_URL=http://slim:46357
       - AGENT_PORT=9004
+      - LEGAL_COUNSEL_URL=http://legal-counsel:9005
+      - RISK_SCORE_URL=http://risk-score:9003
     volumes:
       - ./data:/app/data:ro
-    depends_on:
-      - slim
     restart: unless-stopped
 
   legal-counsel:
@@ -98,12 +94,10 @@ services:
       - "9005:9005"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SLIM_BROKER_URL=http://slim:46357
       - AGENT_PORT=9005
+      - PRESS_SECRETARY_URL=http://press-secretary:9006
     volumes:
       - ./data:/app/data:ro
-    depends_on:
-      - slim
     restart: unless-stopped
 
   press-secretary:
@@ -115,10 +109,7 @@ services:
       - "9006:9006"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SLIM_BROKER_URL=http://slim:46357
       - AGENT_PORT=9006
-    depends_on:
-      - slim
     restart: unless-stopped
 
 
@@ -132,11 +123,15 @@ services:
       - "8000:8000"  # FastAPI
       - "5173:5173"  # Vite dev server
     environment:
-      - SLIM_BROKER_URL=http://slim:46357
       - GATEWAY_HOST=0.0.0.0
       - GATEWAY_PORT=8000
+      - EAR_TO_GROUND_URL=http://ear-to-ground:9001
+      - SENTIMENT_ANALYST_URL=http://sentiment-analyst:9002
+      - RISK_SCORE_URL=http://risk-score:9003
+      - FACT_CHECKER_URL=http://fact-checker:9004
+      - LEGAL_COUNSEL_URL=http://legal-counsel:9005
+      - PRESS_SECRETARY_URL=http://press-secretary:9006
     depends_on:
-      - slim
       - ear-to-ground
       - sentiment-analyst
       - risk-score

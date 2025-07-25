@@ -9,11 +9,9 @@ RUN apt-get update && apt-get install -y \
 
 # Copy project files
 COPY pyproject.toml .
-COPY agents/ear_to_ground/ ./agents/ear_to_ground/
+COPY agents/sentiment_analyst/ ./agents/sentiment_analyst/
 COPY common/ ./common/
 COPY config/ ./config/
-# Copy data
-COPY data/ ./data/
 
 # Install build tooling and dependencies
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
@@ -21,10 +19,10 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
 
 # Set environment variables
 ENV PYTHONPATH=/app
-ENV AGENT_PORT=9001
+ENV AGENT_PORT=9002
 
 # Expose port
-EXPOSE 9001
+EXPOSE 9002
 
 # Run the agent server
-CMD ["python", "-m", "agents.ear_to_ground.server"]
+CMD ["python", "-m", "agents.sentiment_analyst.server"]

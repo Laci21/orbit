@@ -11,7 +11,7 @@ class EarToGroundConfig:
         self.transport_endpoint = os.getenv("SLIM_BROKER_URL", "http://localhost:46357")
         self.tweet_file = os.getenv("ORBIT_TWEET_FILE", "data/tweets_astronomer.json")
         self.tweet_rate = float(os.getenv("TWEET_STREAM_RATE", "1.0"))
-        self.broadcast_topic = "orbit.crisis.tweets"
+        self.broadcast_topic = "orbit.crisis.detected"
         
         self._validate()
         

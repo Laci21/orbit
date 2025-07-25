@@ -20,46 +20,44 @@ No test framework is currently configured in this project.
 ## Architecture & Key Components
 
 ### Multi-Agent System Architecture
-The Orbit system uses an **event-driven, dependency-based architecture** with 6 AI agents communicating via SLIM transport:
+The Orbit system uses a **direct agent communication architecture** with 6 AI agents communicating via JSON-RPC A2A calls:
 
 #### Agent Communication Flow
 ```
 Tweet with claim arrives
          ↓
     Ear-to-Ground Agent
-         ↓
+         ↓ (JSON-RPC calls)
     ┌─────────────┐
     ↓             ↓
 Fact Checker  Sentiment Analyst
-    ↓             ↓
-    ↓         (both complete)
-    ↓             ↓
+    ↓ (A2A call)  ↓ (A2A call)
     ↓         Risk Score ←─┘
-    ↓
+    ↓ (A2A call)
 Legal Counsel
-    
-(all complete) → Press Secretary
+    ↓ (A2A call)
+Press Secretary
 ```
 
 #### The 6 AI Agents
-1. **Ear-to-Ground Agent** - Monitors social media, detects crisis tweets, broadcasts initial crisis events
-2. **Sentiment Analyst** - Analyzes public sentiment from crisis tweets, provides ongoing sentiment updates
-3. **Fact Checker** - Verifies claims in crisis content, provides factual analysis
-4. **Risk Score Agent** - Calculates crisis severity/impact based on fact check + sentiment analysis
-5. **Legal Counsel Agent** - Reviews legal implications based on fact checker output
-6. **Press Secretary Agent** - Drafts official response statements using all agent outputs
+1. **Ear-to-Ground Agent** (port 9001) - Monitors social media, detects crisis tweets, calls dependent agents
+2. **Sentiment Analyst** (port 9002) - Analyzes public sentiment from crisis tweets
+3. **Fact Checker** (port 9004) - Verifies claims in crisis content, provides factual analysis
+4. **Risk Score Agent** (port 9003) - Calculates crisis severity/impact based on fact check + sentiment analysis
+5. **Legal Counsel Agent** (port 9005) - Reviews legal implications based on fact checker output
+6. **Press Secretary Agent** (port 9006) - Drafts official response statements using all agent outputs
 
-#### Event-Driven Dependencies
-- **crisis_detected** → Fact Checker + Sentiment Analyst (parallel)
-- **fact_check_complete** → Legal Counsel + Risk Score (partial dependency)
-- **sentiment_analysis_complete** → Risk Score (completes dependency)
-- **risk_score_complete** + **legal_review_complete** → Press Secretary
+#### Direct A2A Dependencies
+- **Ear-to-Ground** → Fact Checker + Sentiment Analyst (parallel JSON-RPC calls)
+- **Fact Checker** → Legal Counsel + Risk Score (direct JSON-RPC calls)
+- **Sentiment Analyst** → Risk Score (direct JSON-RPC call)
+- **Risk Score + Legal Counsel** → Press Secretary (direct JSON-RPC calls)
 
-#### SLIM Transport Communication
-- **SLIM Broker** - Central message hub (ghcr.io/agntcy/slim:0.3.15)
-- **Topic-based routing** - Each agent subscribes to relevant event topics
-- **Dual bridge pattern** - Transport bridge (A2A) + Broadcast bridge (events)
-- **Message format** - SLIMMessage with serialize() method for proper transport compatibility
+#### JSON-RPC A2A Communication
+- **HTTP Servers** - Each agent runs A2AStarletteApplication on dedicated ports
+- **Direct calls** - Agents call each other directly via HTTP JSON-RPC
+- **Synchronous flow** - Agents wait for responses before proceeding
+- **Message format** - Standard JSON-RPC 2.0 with agent-specific payloads
 
 ### Frontend Architecture
 The React dashboard provides real-time visualization of agent coordination:
@@ -73,8 +71,8 @@ The React dashboard provides real-time visualization of agent coordination:
 - **Timeline** - Tracks crisis response progress
 
 #### State Management
-- Real-time agent status updates via gateway polling
-- Event-driven UI updates based on agent completion
+- Agent status updates via REST API polling of gateway
+- Gateway queries agents directly via JSON-RPC A2A calls
 - Mission timer and crisis progression tracking
 
 ## Styling & UI

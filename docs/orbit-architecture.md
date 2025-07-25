@@ -1,8 +1,8 @@
-# Orbit – Event-Driven Crisis Management Architecture
+# Orbit – Direct Agent Communication Architecture
 
 ## System Overview
 
-The Orbit system uses an **event-driven, dependency-based architecture** where AI agents coordinate through SLIM transport messaging to handle PR crises autonomously.
+The Orbit system uses a **direct agent communication architecture** where AI agents coordinate through JSON-RPC A2A calls to handle PR crises autonomously. The gateway provides REST APIs for frontend monitoring and control.
 
 ## High-Level Architecture
 
@@ -13,20 +13,16 @@ graph TD
   end
 
   subgraph "Gateway Layer"
-    Gateway["FastAPI Gateway\n(Orchestration & Status)"]
-  end
-
-  subgraph "Message Broker"
-    SLIM["SLIM Broker\n(Event Streaming Hub)"]
+    Gateway["FastAPI Gateway\n(Agent Orchestration)"]
   end
 
   subgraph "AI Agent Layer"
-    Ear["Ear-to-Ground\n(Crisis Detection)"]
-    Sent["Sentiment Analyst\n(Public Opinion)"]
-    Risk["Risk Score\n(Impact Assessment)"]
-    Fact["Fact Checker\n(Claim Verification)"]
-    Legal["Legal Counsel\n(Compliance Review)"]
-    Press["Press Secretary\n(Response Generation)"]
+    Ear["Ear-to-Ground\n:9001"]
+    Sent["Sentiment Analyst\n:9002"]
+    Risk["Risk Score\n:9003"]
+    Fact["Fact Checker\n:9004"]
+    Legal["Legal Counsel\n:9005"]
+    Press["Press Secretary\n:9006"]
   end
 
   subgraph "Data Layer"
@@ -35,18 +31,23 @@ graph TD
     LegalRubric["Legal Guidelines"]
   end
 
-  BrowserUI <--> |"REST API\n(Status/Control)"| Gateway
-  Gateway <--> |"Agent Queries"| SLIM
+  BrowserUI <--> |"REST API"| Gateway
+  Gateway <--> |"JSON-RPC A2A"| Ear
+  Gateway <--> |"JSON-RPC A2A"| Sent
+  Gateway <--> |"JSON-RPC A2A"| Risk
+  Gateway <--> |"JSON-RPC A2A"| Fact
+  Gateway <--> |"JSON-RPC A2A"| Legal
+  Gateway <--> |"JSON-RPC A2A"| Press
   
-  Ear --> |"crisis_detected"| SLIM
-  SLIM --> |"crisis_detected"| Fact
-  SLIM --> |"crisis_detected"| Sent
+  Ear --> |"JSON-RPC A2A"| Sent
+  Ear --> |"JSON-RPC A2A"| Fact
   
-  Fact --> |"fact_check_complete"| SLIM
-  Sent --> |"sentiment_complete"| SLIM
+  Fact --> |"JSON-RPC A2A"| Legal
+  Sent --> |"JSON-RPC A2A"| Risk
+  Fact --> |"JSON-RPC A2A"| Risk
   
-  SLIM --> |"fact_check_complete"| Legal
-  SLIM --> |"fact_check_complete\n+ sentiment_complete"| Risk
+  Risk --> |"JSON-RPC A2A"| Press
+  Legal --> |"JSON-RPC A2A"| Press
   
   Risk --> |"risk_score_complete"| SLIM
   Legal --> |"legal_review_complete"| SLIM
@@ -98,23 +99,25 @@ sequenceDiagram
     Gateway->>UI: Response ready for approval
 ```
 
-## Agent Communication Topics
+## Agent Communication Endpoints
 
-| Topic | Publisher | Subscribers | Purpose |
-|-------|-----------|-------------|---------|
-| `orbit.crisis.detected` | Ear-to-Ground | Fact Checker, Sentiment Analyst | Initial crisis trigger |
-| `orbit.fact.complete` | Fact Checker | Legal Counsel, Risk Score | Claim verification results |
-| `orbit.sentiment.complete` | Sentiment Analyst | Risk Score | Public opinion analysis |
-| `orbit.risk.complete` | Risk Score | Press Secretary | Crisis severity assessment |
-| `orbit.legal.complete` | Legal Counsel | Press Secretary | Legal risk evaluation |
-| `orbit.response.ready` | Press Secretary | Gateway | Draft response available |
+| Agent | Port | A2A Endpoint | Purpose |
+|-------|------|--------------|---------|  
+| Ear-to-Ground | 9001 | `http://ear-to-ground:9001/` | Crisis detection and coordination |
+| Sentiment Analyst | 9002 | `http://sentiment-analyst:9002/` | Public opinion analysis |
+| Risk Score | 9003 | `http://risk-score:9003/` | Crisis severity assessment |
+| Fact Checker | 9004 | `http://fact-checker:9004/` | Claim verification |
+| Legal Counsel | 9005 | `http://legal-counsel:9005/` | Legal risk evaluation |
+| Press Secretary | 9006 | `http://press-secretary:9006/` | Response generation |
+| Gateway | 8000 | `http://gateway:8000/api/` | REST API for frontend |
 
 ## Technology Stack
 
 ### Communication Layer
-- **SLIM Broker**: Central event streaming hub (ghcr.io/agntcy/slim:0.3.15)
-- **AGNTCY App SDK**: Agent framework and transport abstraction
-- **Dual Bridge Pattern**: A2A (requests) + Broadcast (events)
+- **JSON-RPC A2A**: Direct agent-to-agent communication
+- **A2AStarletteApplication**: HTTP server for each agent
+- **AGNTCY App SDK**: Agent framework and request handling
+- **REST API**: Gateway-to-frontend communication
 
 ### AI Agent Layer  
 - **LangGraph**: Agent workflow orchestration

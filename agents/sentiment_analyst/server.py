@@ -1,4 +1,4 @@
-"""Server for the Ear-to-Ground agent."""
+"""Server for the Sentiment Analyst agent."""
 
 import asyncio
 import logging
@@ -13,27 +13,26 @@ from a2a.server.tasks import InMemoryTaskStore
 from agntcy_app_sdk.factory import GatewayFactory
 from dotenv import load_dotenv
 
-from agents.ear_to_ground.agent_executor import EarToGroundAgentExecutor
-from agents.ear_to_ground.card import AGENT_CARD
-from agents.ear_to_ground.config import EarToGroundConfig
-from agents.ear_to_ground.streaming_service import TweetStreamingService
+from agents.sentiment_analyst.agent_executor import SentimentAnalystAgentExecutor
+from agents.sentiment_analyst.card import AGENT_CARD
+from agents.sentiment_analyst.config import SentimentAnalystConfig
 
 load_dotenv()
 
 # Initialize a multi-protocol, multi-transport gateway factory.
 factory = GatewayFactory()
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("orbit.sentiment_analyst_agent.server")
 
 
-class EarToGroundServer:
-    """Server for the Ear-to-Ground agent."""
+class SentimentAnalystServer:
+    """Server for the Sentiment Analyst agent."""
     
-    def __init__(self, config: Optional[EarToGroundConfig] = None):
-        self.config = config or EarToGroundConfig()
+    def __init__(self, config: Optional[SentimentAnalystConfig] = None):
+        self.config = config or SentimentAnalystConfig()
         self.transport = None
         self.app = None
-        self.streaming_service = None
+        self.event_service = None
         self._shutdown_event = asyncio.Event()
         
     def _setup_signal_handlers(self) -> None:
@@ -46,15 +45,15 @@ class EarToGroundServer:
         signal.signal(signal.SIGTERM, signal_handler)
         
     async def start(self) -> None:
-        """Start the Ear-to-Ground agent server."""
-        logger.info(f"Starting Ear-to-Ground agent on port {self.config.agent_port}")
+        """Start the Sentiment Analyst agent server."""
+        logger.info(f"Starting Sentiment Analyst agent on port {self.config.agent_port}")
         
         # Setup signal handlers
         self._setup_signal_handlers()
         
         # Create A2A application  
         request_handler = DefaultRequestHandler(
-            agent_executor=EarToGroundAgentExecutor(),
+            agent_executor=SentimentAnalystAgentExecutor(),
             task_store=InMemoryTaskStore()
         )
         
@@ -66,7 +65,9 @@ class EarToGroundServer:
         # Create transport
         self.transport = factory.create_transport("SLIM", endpoint=self.config.transport_endpoint)
         
-        # Start HTTP server for direct A2A calls
+        # No event service needed - agent will be called directly via A2A
+        
+        # Start HTTP server for direct A2A calls only (no SLIM)
         config = Config(
             app=self.app.build(), 
             host="0.0.0.0", 
@@ -74,23 +75,13 @@ class EarToGroundServer:
             loop="asyncio"
         )
         userver = Server(config)
-        
-        # Create streaming service (no SLIM transport needed)
-        self.streaming_service = TweetStreamingService(None, None)
-        
-        # Run HTTP server and streaming service concurrently
-        tasks = [
-            asyncio.create_task(userver.serve()),
-            asyncio.create_task(self.streaming_service.start())
-        ]
-        
         logger.info(f"HTTP A2A server started on port {self.config.agent_port}")
-        logger.info("Tweet streaming service starting...")
         
+        # Run only the HTTP server (no SLIM bridges needed)
         try:
-            await asyncio.gather(*tasks)
+            await userver.serve()
         except KeyboardInterrupt:
-            logger.info("Shutting down Ear-to-Ground agent server")
+            logger.info("Shutting down Sentiment Analyst agent server")
         except Exception as e:
             logger.error(f"Error running server: {e}")
             raise
@@ -104,10 +95,10 @@ class EarToGroundServer:
         """Cleanup resources during shutdown."""
         logger.info("Starting cleanup...")
         
-        if self.streaming_service:
-            self.streaming_service.stop()
+        if self.event_service:
+            self.event_service.stop()
             
-        # Give streaming service time to finish current operations
+        # Give event service time to finish current operations
         await asyncio.sleep(2)
         
         logger.info("Cleanup completed")
@@ -119,5 +110,5 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     
-    server = EarToGroundServer()
+    server = SentimentAnalystServer()
     asyncio.run(server.start())
