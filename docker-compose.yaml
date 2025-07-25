@@ -155,13 +155,13 @@ services:
       dockerfile: docker/Dockerfile.gateway
     platform: linux/amd64
     ports:
-      - "8000:8000"  # FastAPI + React UI
+      - "8000:8000"  # FastAPI + React UI  
+      - "5173:5173"  # Vite dev server
     environment:
       - GATEWAY_PORT=8000
       - EAR_TO_GROUND_URL=http://ear-to-ground:9001
     volumes:
       - ./gateway:/app/gateway:cached  # Enable hot reload for gateway code
-      - /app/gateway/frontend/dist    # Exclude dist folder from volume mount
     depends_on:
       - ear-to-ground
       - sentiment-analyst

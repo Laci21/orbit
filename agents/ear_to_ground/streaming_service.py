@@ -28,6 +28,7 @@ class TweetStreamingService:
         self.tweet_rate = float(os.getenv("TWEET_STREAM_RATE", "1.0"))
         self.tweets: List[Dict[str, Any]] = []
         self._is_running = False
+        self.final_crisis_response: Optional[Dict[str, Any]] = None  # Store final response
         # Convert agent card to dict following Coffee AGNTCY pattern
         self.agent_card = AGENT_CARD.model_dump(mode="json", exclude_none=True)
         
@@ -186,11 +187,19 @@ class TweetStreamingService:
                     risk_result = await self._call_risk_score(crisis_data, sentiment_result, fact_result)
                     
                     # Extract legal counsel data from fact result (fact checker calls legal counsel)
-                    legal_result = self._extract_legal_counsel_data(fact_result)
+                    # Use the same recursive extractor as for other analysis data
+                    legal_result = self._extract_analysis_data(fact_result, 'legal_review')
+                    if not legal_result:
+                        logger.debug("Legal review not found in fact checker response, trying alternative extraction")
+                        legal_result = self._extract_legal_counsel_data(fact_result)
                     
                     # Call Press Secretary with all data if risk assessment succeeded
                     if risk_result is not None and legal_result is not None:
-                        await self._call_press_secretary(crisis_data, sentiment_result, fact_result, risk_result, legal_result)
+                        press_response = await self._call_press_secretary(crisis_data, sentiment_result, fact_result, risk_result, legal_result)
+                        if press_response:
+                            # Store the final response for retrieval by gateway
+                            self.final_crisis_response = press_response
+                            self._display_final_crisis_response(crisis_data, press_response)
                     else:
                         logger.error(f"Cannot call Press Secretary - missing data. Risk: {risk_result is not None}, Legal: {legal_result is not None}")
                 else:
@@ -302,41 +311,9 @@ class TweetStreamingService:
     async def _call_risk_score(self, crisis_data: Dict[str, Any], sentiment_result: Dict[str, Any], fact_result: Dict[str, Any]) -> Dict[str, Any]:
         """Call the risk score agent with combined analysis data."""
         try:
-            # Extract analysis data from the agent A2A responses
-            sentiment_analysis = {}
-            fact_analysis = {}
-            
-            # Extract sentiment analysis from A2A response format
-            if isinstance(sentiment_result, dict):
-                # Check for A2A response format with result.result.message.metadata
-                if 'result' in sentiment_result and isinstance(sentiment_result['result'], dict):
-                    result_data = sentiment_result['result']
-                    if 'message' in result_data and 'metadata' in result_data['message']:
-                        metadata = result_data['message']['metadata']
-                        if 'sentiment_analysis' in metadata:
-                            sentiment_analysis = metadata['sentiment_analysis']
-                    # Fallback: check if result contains analysis directly
-                    elif 'sentiment_analysis' in result_data:
-                        sentiment_analysis = result_data['sentiment_analysis']
-                # Direct dict fallback
-                elif 'sentiment_analysis' in sentiment_result:
-                    sentiment_analysis = sentiment_result['sentiment_analysis']
-            
-            # Extract fact analysis from A2A response format
-            if isinstance(fact_result, dict):
-                # Check for A2A response format with result.result.message.metadata
-                if 'result' in fact_result and isinstance(fact_result['result'], dict):
-                    result_data = fact_result['result']
-                    if 'message' in result_data and 'metadata' in result_data['message']:
-                        metadata = result_data['message']['metadata']
-                        if 'fact_analysis' in metadata:
-                            fact_analysis = metadata['fact_analysis']
-                    # Fallback: check if result contains analysis directly
-                    elif 'fact_analysis' in result_data:
-                        fact_analysis = result_data['fact_analysis']
-                # Direct dict fallback
-                elif 'fact_analysis' in fact_result:
-                    fact_analysis = fact_result['fact_analysis']
+            # Use the improved extractor for both analyses
+            sentiment_analysis = self._extract_analysis_data(sentiment_result, 'sentiment_analysis')
+            fact_analysis = self._extract_analysis_data(fact_result, 'fact_analysis')
             
             # Validate that we successfully extracted analysis data
             if not sentiment_analysis or not fact_analysis:
@@ -404,32 +381,25 @@ class TweetStreamingService:
     def _extract_legal_counsel_data(self, fact_result: Dict[str, Any]) -> Dict[str, Any]:
         """Extract legal counsel data from fact checker response (fact checker calls legal counsel)."""
         try:
-            # Check if legal data is already present in fact result
+            # Attempt to extract using the generic recursive extractor first
+            legal_review = self._extract_analysis_data(fact_result, 'legal_review')
+            if legal_review:
+                logger.info("Successfully extracted legal counsel review from fact checker result")
+                return legal_review
+
+            # Fallback to previous structured path for backward-compatibility
             if isinstance(fact_result, dict):
                 if 'result' in fact_result and isinstance(fact_result['result'], dict):
                     result_data = fact_result['result']
-                    if 'message' in result_data and 'metadata' in result_data['message']:
-                        metadata = result_data['message']['metadata']
+                    if 'metadata' in result_data:
+                        metadata = result_data['metadata']
                         if 'legal_review' in metadata:
                             return metadata['legal_review']
-                            
-            # For demo purposes, return a mock legal assessment
-            # In production, this would wait for or retrieve actual legal counsel results
-            mock_legal_review = {
-                "legal_risk": "medium",
-                "compliance_issues": [],
-                "recommended_approach": "cautious_acknowledgment",
-                "restrictions": [
-                    "avoid admitting fault",
-                    "preserve document retention"
-                ],
-                "escalation_needed": False,
-                "external_counsel": False
-            }
-            
-            logger.info("Using mock legal counsel data for demo")
-            return mock_legal_review
-            
+
+            # If still not found, log and return None so caller can decide how to proceed
+            logger.debug("Legal review not found in fact checker response")
+            return None
+         
         except Exception as e:
             logger.error(f"Error extracting legal counsel data: {e}")
             return None
@@ -491,8 +461,7 @@ END_CRISIS_DATA"""
                 ) as response:
                     if response.status == 200:
                         press_response = await response.json()
-                        logger.info(f"🎯 FINAL CRISIS RESPONSE GENERATED for crisis {crisis_data.get('crisis_id', 'unknown')}")
-                        logger.info(f"Press Secretary response received - this is the final output for demo!")
+                        logger.info(f"Press Secretary response generated for crisis {crisis_data.get('crisis_id', 'unknown')}")
                         return press_response
                     else:
                         error_text = await response.text()
@@ -506,22 +475,35 @@ END_CRISIS_DATA"""
     def _extract_analysis_data(self, agent_result: Dict[str, Any], analysis_key: str) -> Dict[str, Any]:
         """Extract analysis data from agent response."""
         try:
-            if isinstance(agent_result, dict):
-                # Check for A2A response format
-                if 'result' in agent_result and isinstance(agent_result['result'], dict):
-                    result_data = agent_result['result']
-                    if 'message' in result_data and 'metadata' in result_data['message']:
-                        metadata = result_data['message']['metadata']
-                        if analysis_key in metadata:
-                            return metadata[analysis_key]
-                    elif analysis_key in result_data:
-                        return result_data[analysis_key]
-                elif analysis_key in agent_result:
-                    return agent_result[analysis_key]
-            
-            logger.warning(f"Could not extract {analysis_key} from agent result")
-            return {}
-            
+            if not agent_result:
+                return {}
+
+            # Helper to look for metadata recursively
+            def _search(node: Any) -> Optional[Dict[str, Any]]:
+                if isinstance(node, dict):
+                    # Direct hit
+                    if analysis_key in node:
+                        return node[analysis_key]
+                    # Metadata path
+                    if 'metadata' in node and isinstance(node['metadata'], dict) and analysis_key in node['metadata']:
+                        return node['metadata'][analysis_key]
+                    # Recurse on dict values
+                    for v in node.values():
+                        found = _search(v)
+                        if found is not None:
+                            return found
+                elif isinstance(node, list):
+                    for item in node:
+                        found = _search(item)
+                        if found is not None:
+                            return found
+                return None
+
+            found_data = _search(agent_result)
+            if found_data is None:
+                logger.debug(f"Could not extract {analysis_key} from agent result")
+                return {}
+            return found_data
         except Exception as e:
             logger.error(f"Error extracting {analysis_key}: {e}")
             return {}
@@ -530,3 +512,74 @@ END_CRISIS_DATA"""
         """Stop the streaming service."""
         self._is_running = False
         logger.info("Tweet streaming service stopped")
+
+    def _display_final_crisis_response(self, crisis_data: Dict[str, Any], press_response: Dict[str, Any]) -> None:
+        """Display the final crisis response in a nicely formatted way."""
+        try:
+            crisis_id = crisis_data.get('crisis_id', 'unknown')
+            
+            # Extract the press response from the JSON-RPC envelope
+            final_response = None
+            if isinstance(press_response, dict) and 'result' in press_response:
+                result = press_response['result']
+                if isinstance(result, dict) and 'metadata' in result:
+                    final_response = result['metadata'].get('press_response')
+            
+            if final_response and isinstance(final_response, dict):
+                logger.info("=" * 80)
+                logger.info(f"🎯 FINAL CRISIS RESPONSE - Crisis ID: {crisis_id}")
+                logger.info("=" * 80)
+                
+                # Primary statement
+                primary = final_response.get('primary_statement', 'No statement available')
+                logger.info(f"📢 PRIMARY STATEMENT ({final_response.get('tone', 'unknown')} tone):")
+                logger.info(f"   {primary}")
+                logger.info("")
+                
+                # Key messages
+                key_messages = final_response.get('key_messages', [])
+                if key_messages:
+                    logger.info("🔑 KEY MESSAGES:")
+                    for i, msg in enumerate(key_messages, 1):
+                        logger.info(f"   {i}. {msg}")
+                    logger.info("")
+                
+                # Channel-specific responses
+                channels = final_response.get('channels', {})
+                if channels:
+                    logger.info("📺 CHANNEL-SPECIFIC RESPONSES:")
+                    if 'press_release' in channels:
+                        logger.info(f"   📰 Press Release: {channels['press_release'][:100]}...")
+                    if 'social_media' in channels:
+                        logger.info(f"   📱 Social Media: {channels['social_media']}")
+                    if 'employee_memo' in channels:
+                        logger.info(f"   👥 Employee Memo: {channels['employee_memo'][:100]}...")
+                    logger.info("")
+                
+                # Risk assessment
+                reputational_risk = final_response.get('reputational_risk', 'unknown')
+                confidence = final_response.get('confidence', 0.0)
+                legal_compliance = final_response.get('legal_compliance', False)
+                
+                logger.info(f"⚖️  COMPLIANCE: {'✅ Legal compliant' if legal_compliance else '❌ Legal concerns'}")
+                logger.info(f"🎯 CONFIDENCE: {confidence:.1%}")
+                logger.info(f"📊 REPUTATIONAL RISK: {reputational_risk.upper()}")
+                
+                logger.info("=" * 80)
+                logger.info("✅ Crisis response generation completed successfully!")
+                logger.info("=" * 80)
+            else:
+                logger.warning("Could not extract final crisis response from Press Secretary")
+                logger.info(f"🎯 Crisis response generated for crisis {crisis_id} (details not parsed)")
+                
+        except Exception as e:
+            logger.error(f"Error displaying final crisis response: {e}")
+            logger.info(f"🎯 Crisis response generated for crisis {crisis_data.get('crisis_id', 'unknown')}")
+
+    def get_final_response(self) -> Optional[Dict[str, Any]]:
+        """Get the final crisis response for external consumption (e.g., by gateway)."""
+        return self.final_crisis_response
+
+    def clear_final_response(self) -> None:
+        """Clear the stored final response (for new crises)."""
+        self.final_crisis_response = None

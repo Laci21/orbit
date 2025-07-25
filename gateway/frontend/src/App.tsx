@@ -130,7 +130,7 @@ function App() {
                 className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 disabled:bg-red-800 px-4 py-2 rounded font-bold text-sm"
               >
                 <Play className="w-4 h-4" />
-                <span>{triggering ? 'TRIGGERING...' : 'TRIGGER CRISIS'}</span>
+                <span>{triggering ? 'TRIGGERING...' : (crisisStatus?.status === 'complete' ? 'RETRIGGER CRISIS' : 'TRIGGER CRISIS')}</span>
               </button>
             )}
             

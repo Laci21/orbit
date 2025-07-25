@@ -91,8 +91,14 @@ class FactCheckerAgentExecutor(AgentExecutor):
                                f"Claims verified: {fact_result.get('claims_verified', 0)}/{fact_result.get('claims_identified', 0)}, " \
                                f"Risk factors: {len(fact_result.get('risk_factors', []))}"
                 
-                # Call Legal Counsel immediately after fact checking
-                await self._call_legal_counsel(crisis_data, fact_result)
+                # Call Legal Counsel immediately after fact checking and collect the review
+                legal_review = await self._call_legal_counsel(crisis_data, fact_result)
+                
+                # If we received a proper legal review, attach it to the outbound metadata so
+                # downstream services (Risk-Score / Press-Secretary) can consume it without
+                # making another network hop.
+                if legal_review:
+                    fact_result["legal_review"] = legal_review
                 
                 # Store fact result for potential Risk Score call later
                 # (Risk Score will be called separately by Sentiment Analyst)
@@ -103,6 +109,8 @@ class FactCheckerAgentExecutor(AgentExecutor):
                     metadata={
                         "name": self.agent_card["name"],
                         "fact_analysis": fact_result,
+                        # Include the legal review at the top level for easier extraction
+                        **({"legal_review": legal_review} if legal_review else {}),
                         "crisis_id": crisis_data.get("crisis_id")
                     },
                     parts=[Part(TextPart(text=response_text))]
@@ -119,15 +127,14 @@ class FactCheckerAgentExecutor(AgentExecutor):
                     parts=[Part(TextPart(text=output))]
                 )
             
-            logger.info("agent output message: %s", message)
             event_queue.enqueue_event(message)
                     
         except Exception as e:
             logger.error(f"An error occurred while processing fact check: {e}")
             raise ServerError(error=InternalError()) from e
     
-    async def _call_legal_counsel(self, crisis_data: dict, fact_result: dict) -> None:
-        """Call Legal Counsel agent immediately after fact checking."""
+    async def _call_legal_counsel(self, crisis_data: dict, fact_result: dict) -> dict | None:
+        """Call Legal Counsel agent immediately after fact checking and return the parsed legal review."""
         try:
             prompt = f"Please review the legal implications of this crisis based on fact checking results: {fact_result['overall_credibility']} credibility, claims: {fact_result.get('fact_checks', [])}"
             
@@ -160,14 +167,36 @@ class FactCheckerAgentExecutor(AgentExecutor):
                     if response.status == 200:
                         result = await response.json()
                         logger.info(f"Legal Counsel called successfully for crisis {crisis_data.get('crisis_id', 'unknown')}")
+
+                        # Try to extract legal_review from the response structure
+                        try:
+                            # Expected path: result -> result -> message -> metadata -> legal_review
+                            if (
+                                isinstance(result, dict)
+                                and "result" in result
+                                and isinstance(result["result"], dict)
+                            ):
+                                inner = result["result"]
+                                if (
+                                    "metadata" in inner
+                                    and "legal_review" in inner["metadata"]
+                                ):
+                                    return inner["metadata"]["legal_review"]
+                            else:
+                                logger.debug("Legal Counsel response does not have expected 'result' structure")
+                        except Exception as exc:
+                            logger.debug(f"Could not parse legal review from response: {exc}")
+                        return None
                     else:
                         error_text = await response.text()
                         logger.error(f"Legal Counsel call failed: {response.status} - {error_text}")
-                        
+                        return None
         except asyncio.TimeoutError:
             logger.error("Legal Counsel call timed out")
+            return None
         except Exception as e:
             logger.error(f"Error calling Legal Counsel: {e}")
+            return None
             
     async def cancel(
         self, 
