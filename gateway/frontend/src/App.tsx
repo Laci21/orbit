@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Satellite, Shield } from 'lucide-react';
+import { Satellite, Shield, Play } from 'lucide-react';
 import { AgentPanel } from './components/AgentPanel';
 import { CrisisAlert } from './components/CrisisAlert';
 import { SentimentDisplay } from './components/SentimentDisplay';
 import { PolicyPanel } from './components/PolicyPanel';
 import { StatementDraft } from './components/StatementDraft';
-import { Timeline } from './components/Timeline';
-import { initialAgents, crisisData, timelineEvents, Agent } from './data/mockData';
+import { initialAgents, crisisData, Agent } from './data/mockData';
+import { useCrisisStatus, triggerCrisis } from './api/orbit';
 
 function App() {
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
-  const [currentStep, setCurrentStep] = useState(-1);
   const [isPublished, setIsPublished] = useState(false);
   const [missionTime, setMissionTime] = useState(0);
+  const [triggering, setTriggering] = useState(false);
 
-  // Auto-progress through the crisis simulation
+  // Use real API for crisis status
+  const { status: crisisStatus, loading, error } = useCrisisStatus();
+
+  // Mission timer
   useEffect(() => {
     const timer = setInterval(() => {
       setMissionTime(prev => prev + 1);
@@ -23,24 +26,43 @@ function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Trigger crisis detection after 3 seconds
+  // Update agent statuses based on real crisis status
   useEffect(() => {
-    if (missionTime === 3 && currentStep === -1) {
-      setCurrentStep(0);
-      updateAgentStatus('ear-to-ground', 'active', 'Crisis detected! Analyzing viral content...');
-    }
-  }, [missionTime, currentStep]);
+    if (!crisisStatus) return;
 
-  // Progress through steps automatically
-  useEffect(() => {
-    if (currentStep >= 0 && currentStep < 4) {
-      const timer = setTimeout(() => {
-        progressToNextStep();
-      }, 4000);
-
-      return () => clearTimeout(timer);
+    switch (crisisStatus.status) {
+      case 'idle':
+        // Reset all agents to idle
+        setAgents(prev => prev.map(agent => ({ 
+          ...agent, 
+          status: 'idle', 
+          currentAction: undefined 
+        })));
+        break;
+      case 'active':
+        // Crisis is active - show Ear-to-Ground orchestrating
+        updateAgentStatus('ear-to-ground', 'active', 'Orchestrating crisis response...');
+        updateAgentStatus('sentiment-analyzer', 'active', 'Analyzing sentiment...');
+        updateAgentStatus('fact-checker', 'active', 'Fact checking claims...');
+        break;
+      case 'complete':
+        // Crisis complete - show final results
+        setAgents(prev => prev.map(agent => ({ 
+          ...agent, 
+          status: 'complete', 
+          currentAction: undefined 
+        })));
+        break;
+      case 'error':
+        // Handle error state
+        setAgents(prev => prev.map(agent => ({ 
+          ...agent, 
+          status: 'idle', 
+          currentAction: 'Error occurred' 
+        })));
+        break;
     }
-  }, [currentStep]);
+  }, [crisisStatus]);
 
   const updateAgentStatus = (agentId: string, status: Agent['status'], action?: string) => {
     setAgents(prev => prev.map(agent => 
@@ -50,35 +72,27 @@ function App() {
     ));
   };
 
-  const progressToNextStep = () => {
-    const nextStep = currentStep + 1;
-    setCurrentStep(nextStep);
-
-    switch (nextStep) {
-      case 1:
-        updateAgentStatus('ear-to-ground', 'complete');
-        updateAgentStatus('sentiment-analyzer', 'active', 'Analyzing public sentiment...');
-        break;
-      case 2:
-        updateAgentStatus('sentiment-analyzer', 'complete');
-        updateAgentStatus('fact-checker', 'active', 'Retrieving crisis response protocols...');
-        break;
-      case 3:
-        updateAgentStatus('fact-checker', 'complete');
-        updateAgentStatus('press-secretary', 'active', 'Drafting response statement...');
-        break;
-      case 4:
-        updateAgentStatus('press-secretary', 'complete');
-        break;
+  const handleTriggerCrisis = async () => {
+    if (triggering) return;
+    
+    setTriggering(true);
+    try {
+      await triggerCrisis({
+        tweet_content: "BREAKING: Major allegations surface against company executive. Investigation needed immediately. #CrisisAlert"
+      });
+    } catch (err) {
+      console.error('Failed to trigger crisis:', err);
+    } finally {
+      setTriggering(false);
     }
   };
 
   const handleApprove = () => {
     setIsPublished(true);
-    // Reset all agents to idle after publishing
+    // UI-only approval - no backend call needed per user request
     setTimeout(() => {
-      setAgents(prev => prev.map(agent => ({ ...agent, status: 'idle', currentAction: undefined })));
-    }, 2000);
+      setIsPublished(false);
+    }, 3000);
   };
 
   const formatMissionTime = (seconds: number) => {
@@ -107,11 +121,29 @@ function App() {
               <div className="text-cyan-400 text-sm font-bold">MISSION TIME</div>
               <div className="text-white text-xl font-mono">{formatMissionTime(missionTime)}</div>
             </div>
+            
+            {/* Crisis Trigger Button */}
+            {crisisStatus?.status === 'idle' && (
+              <button
+                onClick={handleTriggerCrisis}
+                disabled={triggering}
+                className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 disabled:bg-red-800 px-4 py-2 rounded font-bold text-sm"
+              >
+                <Play className="w-4 h-4" />
+                <span>{triggering ? 'TRIGGERING...' : 'TRIGGER CRISIS'}</span>
+              </button>
+            )}
+            
             <div className="flex items-center space-x-2">
-              {currentStep >= 0 ? (
+              {crisisStatus?.status === 'active' ? (
                 <>
                   <div className="w-5 h-5 bg-red-500 rounded-full animate-pulse" />
-                  <span className="text-red-400 text-sm font-bold">CRISIS ALERT</span>
+                  <span className="text-red-400 text-sm font-bold">CRISIS ACTIVE</span>
+                </>
+              ) : crisisStatus?.status === 'complete' ? (
+                <>
+                  <div className="w-5 h-5 bg-yellow-500 rounded-full" />
+                  <span className="text-yellow-400 text-sm font-bold">RESPONSE READY</span>
                 </>
               ) : (
                 <>
@@ -129,7 +161,7 @@ function App() {
         {/* Left Column - Crisis Alert */}
         <div className="col-span-8">
           <CrisisAlert 
-            isActive={currentStep >= 0} 
+            isActive={crisisStatus?.status === 'active' || crisisStatus?.status === 'complete'} 
             tweetData={crisisData.viralTweet}
           />
         </div>
@@ -142,30 +174,60 @@ function App() {
         {/* Second Row - Analysis Panels */}
         <div className="col-span-4">
           <SentimentDisplay 
-            isActive={currentStep >= 1} 
+            isActive={crisisStatus?.status === 'active' || crisisStatus?.status === 'complete'} 
             sentimentData={crisisData.sentimentData}
           />
         </div>
 
         <div className="col-span-4">
           <PolicyPanel 
-            isActive={currentStep >= 2} 
+            isActive={crisisStatus?.status === 'active' || crisisStatus?.status === 'complete'} 
             policyData={crisisData.policySnippet}
           />
         </div>
 
         <div className="col-span-4">
           <StatementDraft 
-            isActive={currentStep >= 3}
+            isActive={crisisStatus?.status === 'complete'}
             isPublished={isPublished}
-            draftContent={crisisData.draftStatement}
+            draftContent={crisisStatus?.final_response ? "AI-generated response ready for review" : crisisData.draftStatement}
             onApprove={handleApprove}
           />
         </div>
 
-        {/* Bottom Row - Timeline */}
+        {/* Bottom Row - Status Display */}
         <div className="col-span-12">
-          <Timeline events={timelineEvents} currentStep={currentStep} />
+          <div className="bg-gray-900 border border-cyan-500 rounded-lg p-4">
+            <h3 className="text-cyan-400 text-lg font-bold mb-2">CRISIS STATUS</h3>
+            {loading ? (
+              <p className="text-gray-400">Loading...</p>
+            ) : error ? (
+              <p className="text-red-400">Error: {error}</p>
+            ) : (
+              <div className="grid grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-400">Status:</span>
+                  <span className="ml-2 text-white font-mono">{crisisStatus?.status?.toUpperCase() || 'UNKNOWN'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Crisis ID:</span>
+                  <span className="ml-2 text-white font-mono">{crisisStatus?.crisis_id || 'NONE'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Started:</span>
+                  <span className="ml-2 text-white font-mono">
+                    {crisisStatus?.started_at ? new Date(crisisStatus.started_at).toLocaleTimeString() : 'N/A'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Last Update:</span>
+                  <span className="ml-2 text-white font-mono">
+                    {crisisStatus?.last_update ? new Date(crisisStatus.last_update).toLocaleTimeString() : 'N/A'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -155,17 +155,10 @@ services:
       dockerfile: docker/Dockerfile.gateway
     platform: linux/amd64
     ports:
-      - "8000:8000"  # FastAPI
-      - "5173:5173"  # Vite dev server
+      - "8000:8000"  # FastAPI + React UI
     environment:
-      - GATEWAY_HOST=0.0.0.0
       - GATEWAY_PORT=8000
       - EAR_TO_GROUND_URL=http://ear-to-ground:9001
-      - SENTIMENT_ANALYST_URL=http://sentiment-analyst:9002
-      - RISK_SCORE_URL=http://risk-score:9003
-      - FACT_CHECKER_URL=http://fact-checker:9004
-      - LEGAL_COUNSEL_URL=http://legal-counsel:9005
-      - PRESS_SECRETARY_URL=http://press-secretary:9006
     depends_on:
       - ear-to-ground
       - sentiment-analyst

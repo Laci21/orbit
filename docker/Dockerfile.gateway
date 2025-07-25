@@ -1,0 +1,39 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies (including Node.js for React build)
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files for Python dependencies
+COPY pyproject.toml .
+COPY gateway/ ./gateway/
+COPY common/ ./common/
+COPY config/ ./config/
+
+# Install Python build tooling and dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install -e .
+
+# Build React frontend  
+WORKDIR /app/gateway/frontend
+RUN npm ci && npm run build
+
+# Back to app directory
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV GATEWAY_PORT=8000
+
+# Expose port
+EXPOSE 8000
+
+# Run the gateway server
+CMD ["python", "-m", "gateway.main"]
