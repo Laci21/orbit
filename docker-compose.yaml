@@ -29,13 +29,14 @@ services:
       - "9001:9001"
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - ORBIT_TWEET_FILE=/app/data/tweets_astronomer.json
       - AGENT_PORT=9001
       - SENTIMENT_ANALYST_URL=http://sentiment-analyst:9002
       - FACT_CHECKER_URL=http://fact-checker:9004
+      - RISK_SCORE_URL=http://risk-score:9003
     volumes:
       - ./data:/app/data:ro
       - ./:/app:cached
@@ -52,9 +53,9 @@ services:
       - "9002:9002"
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AGENT_PORT=9002
     volumes:
       - ./:/app:cached
@@ -71,12 +72,17 @@ services:
       - "9003:9003"
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
-      - CRISIS_THRESHOLD=${CRISIS_THRESHOLD:-70}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - CRISIS_THRESHOLD=${CRISIS_THRESHOLD:-7.0}
       - AGENT_PORT=9003
+      - PRESS_SECRETARY_URL=http://press-secretary:9006
+    volumes:
+      - ./:/app:cached
     restart: unless-stopped
+    command: >
+      sh -c "watchfiles --filter python 'python -m agents.risk_score.server' /app"
 
   fact-checker:
     build:
@@ -87,9 +93,9 @@ services:
       - "9004:9004"
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AGENT_PORT=9004
       - LEGAL_COUNSEL_URL=http://legal-counsel:9005
       - RISK_SCORE_URL=http://risk-score:9003
@@ -109,14 +115,18 @@ services:
       - "9005:9005"
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AGENT_PORT=9005
       - PRESS_SECRETARY_URL=http://press-secretary:9006
+      - LEGAL_RUBRIC_PATH=data/legal_rubric.md
     volumes:
       - ./data:/app/data:ro
+      - ./:/app:cached
     restart: unless-stopped
+    command: >
+      sh -c "watchfiles --filter python 'python -m agents.legal_counsel.server' /app"
 
   press-secretary:
     build:
@@ -127,9 +137,9 @@ services:
       - "9006:9006"
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AGENT_PORT=9006
     restart: unless-stopped
 

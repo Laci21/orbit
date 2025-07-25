@@ -34,6 +34,7 @@ class TweetStreamingService:
         # Agent endpoints for direct A2A calls
         self.sentiment_analyst_endpoint = os.getenv("SENTIMENT_ANALYST_URL", "http://sentiment-analyst:9002")
         self.fact_checker_endpoint = os.getenv("FACT_CHECKER_URL", "http://fact-checker:9004")
+        self.risk_score_endpoint = os.getenv("RISK_SCORE_URL", "http://risk-score:9003")
         
     async def start(self) -> None:
         """Start the tweet streaming service."""
@@ -157,15 +158,37 @@ class TweetStreamingService:
             )
             tasks.append(fact_checker_task)
             
-            # Wait for all agent calls to complete
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Log results
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    logger.error(f"Agent call {i} failed: {result}")
+            # Wait for both agent calls to complete with 30s timeout
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=30.0
+                )
+                
+                # Process results and call Risk Score if both succeeded
+                sentiment_result = None
+                fact_result = None
+                
+                for i, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        logger.error(f"Agent call {i} failed: {result}")
+                    else:
+                        logger.info(f"Agent call {i} completed successfully")
+                        # Extract analysis data from successful results
+                        if i == 0:  # Sentiment analyst
+                            sentiment_result = result
+                        elif i == 1:  # Fact checker
+                            fact_result = result
+                
+                # Call Risk Score if both analyses completed
+                if sentiment_result is not None and fact_result is not None:
+                    await self._call_risk_score(crisis_data, sentiment_result, fact_result)
                 else:
-                    logger.info(f"Agent call {i} completed successfully")
+                    logger.error(f"Cannot call Risk Score - missing analysis data. Sentiment: {sentiment_result is not None}, Fact: {fact_result is not None}")
+                    
+            except asyncio.TimeoutError:
+                logger.error("Timeout waiting for fact checking and sentiment analysis to complete (30s)")
+                # Continue without calling Risk Score
                     
         except Exception as e:
             logger.error(f"Error calling agents directly: {e}")
@@ -264,6 +287,108 @@ class TweetStreamingService:
             return {"error": "Request timed out"}
         except Exception as e:
             logger.error(f"Error calling fact checker: {e}")
+            return {"error": str(e)}
+    
+    async def _call_risk_score(self, crisis_data: Dict[str, Any], sentiment_result: Dict[str, Any], fact_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the risk score agent with combined analysis data."""
+        try:
+            # Extract analysis data from the agent A2A responses
+            sentiment_analysis = {}
+            fact_analysis = {}
+            
+            # Extract sentiment analysis from A2A response format
+            if isinstance(sentiment_result, dict):
+                # Check for A2A response format with result.result.message.metadata
+                if 'result' in sentiment_result and isinstance(sentiment_result['result'], dict):
+                    result_data = sentiment_result['result']
+                    if 'message' in result_data and 'metadata' in result_data['message']:
+                        metadata = result_data['message']['metadata']
+                        if 'sentiment_analysis' in metadata:
+                            sentiment_analysis = metadata['sentiment_analysis']
+                    # Fallback: check if result contains analysis directly
+                    elif 'sentiment_analysis' in result_data:
+                        sentiment_analysis = result_data['sentiment_analysis']
+                # Direct dict fallback
+                elif 'sentiment_analysis' in sentiment_result:
+                    sentiment_analysis = sentiment_result['sentiment_analysis']
+            
+            # Extract fact analysis from A2A response format
+            if isinstance(fact_result, dict):
+                # Check for A2A response format with result.result.message.metadata
+                if 'result' in fact_result and isinstance(fact_result['result'], dict):
+                    result_data = fact_result['result']
+                    if 'message' in result_data and 'metadata' in result_data['message']:
+                        metadata = result_data['message']['metadata']
+                        if 'fact_analysis' in metadata:
+                            fact_analysis = metadata['fact_analysis']
+                    # Fallback: check if result contains analysis directly
+                    elif 'fact_analysis' in result_data:
+                        fact_analysis = result_data['fact_analysis']
+                # Direct dict fallback
+                elif 'fact_analysis' in fact_result:
+                    fact_analysis = fact_result['fact_analysis']
+            
+            # Validate that we successfully extracted analysis data
+            if not sentiment_analysis or not fact_analysis:
+                logger.error(f"Failed to extract analysis data. Sentiment: {bool(sentiment_analysis)}, Fact: {bool(fact_analysis)}")
+                logger.debug(f"Sentiment result structure: {type(sentiment_result)} - {list(sentiment_result.keys()) if isinstance(sentiment_result, dict) else 'not dict'}")
+                logger.debug(f"Fact result structure: {type(fact_result)} - {list(fact_result.keys()) if isinstance(fact_result, dict) else 'not dict'}")
+                return {"error": "Failed to extract analysis data from agent responses"}
+            
+            # Prepare combined analysis data for Risk Score
+            combined_analysis = {
+                "crisis_id": crisis_data.get("crisis_id", "unknown"),
+                "fact_analysis": fact_analysis,
+                "sentiment_analysis": sentiment_analysis,
+                "timestamp": crisis_data.get("timestamp", ""),
+                "content": crisis_data.get("text", "")
+            }
+            
+            logger.info(f"Successfully extracted analysis data for crisis {crisis_data.get('crisis_id', 'unknown')}: fact_credibility={fact_analysis.get('overall_credibility', 'unknown')}, sentiment_score={sentiment_analysis.get('overall_sentiment', 'unknown')}")
+            
+            # Create prompt for Risk Score agent
+            prompt = f"Please assess the risk for this crisis with combined analysis: {json.dumps(combined_analysis)}"
+            
+            # JSON-RPC request payload for Risk Score
+            request_payload = {
+                "jsonrpc": "2.0",
+                "method": "message/send",
+                "params": {
+                    "message": {
+                        "messageId": f"risk-assessment-{crisis_data.get('crisis_id', 'unknown')}",
+                        "role": "user",
+                        "parts": [
+                            {
+                                "type": "text",
+                                "text": prompt
+                            }
+                        ]
+                    }
+                },
+                "id": 1
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.risk_score_endpoint}/",
+                    json=request_payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        logger.info(f"Risk Score called successfully for crisis {crisis_data.get('crisis_id', 'unknown')}")
+                        return result
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Risk Score call failed: {response.status} - {error_text}")
+                        return {"error": f"HTTP {response.status}: {error_text}"}
+                        
+        except asyncio.TimeoutError:
+            logger.error("Risk Score call timed out")
+            return {"error": "Request timed out"}
+        except Exception as e:
+            logger.error(f"Error calling Risk Score: {e}")
             return {"error": str(e)}
     
     def stop(self) -> None:
