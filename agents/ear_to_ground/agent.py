@@ -70,20 +70,32 @@ class EarToGroundAgent:
     async def ainvoke(self, prompt: str) -> str:
         """Async invoke the agent workflow."""
         try:
+            logger.info(f"EarToGroundAgent.ainvoke called with prompt: {prompt}")
             state = GraphState(
                 messages=[HumanMessage(content=prompt)],
                 current_action="",
                 streaming_status="active"  # Streaming is handled by server
             )
             
+            logger.info("Calling workflow.ainvoke...")
             result = await self.workflow.ainvoke(state)
+            logger.info(f"Workflow result: {result}")
             
             # Return the last AI message
             if result["messages"]:
                 last_message = result["messages"][-1]
+                logger.info(f"Last message: {last_message}, type: {type(last_message)}")
                 if isinstance(last_message, AIMessage):
-                    return last_message.content
+                    logger.info(f"AI message content: {last_message.content}")
+                    content = last_message.content
+                    if content is None:
+                        logger.error("AI message content is None!")
+                        return "Error: AI message content is None"
+                    return content
+                else:
+                    logger.error(f"Last message is not AIMessage: {type(last_message)}")
                     
+            logger.error("No messages in result")
             return "Unable to process request"
             
         except Exception as e:

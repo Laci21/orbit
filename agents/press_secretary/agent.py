@@ -62,7 +62,7 @@ class PressSecretaryAgent:
     def __init__(self):
         self.llm = get_llm()
         # Build and compile LangGraph workflow
-        self.workflow = self._create_workflow().compile()
+        self.workflow = self._create_workflow()
         self.response_prompt = self._create_response_prompt()
     
     def _create_response_prompt(self) -> PromptTemplate:

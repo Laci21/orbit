@@ -21,7 +21,7 @@ COPY config/ ./config/
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
     && pip install -e .
 
-# Build React frontend  
+# Build React frontend for production
 WORKDIR /app/gateway/frontend
 RUN npm ci && npm run build
 
@@ -35,5 +35,5 @@ ENV GATEWAY_PORT=8000
 # Expose port
 EXPOSE 8000
 
-# Run the gateway server
+# Run the gateway server (serves both API and built React)
 CMD ["python", "-m", "gateway.main"]

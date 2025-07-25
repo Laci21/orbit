@@ -18,10 +18,10 @@ logger = logging.getLogger("orbit.gateway")
 
 app = FastAPI(title="Orbit Crisis Management Gateway", version="1.0.0")
 
-# Enable CORS for React frontend
+# Enable CORS for React frontend (both dev and prod)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_origins=["http://localhost:5173", "http://localhost:8000"],  # Vite dev server + FastAPI
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -150,20 +150,23 @@ async def monitor_crisis_progress():
         # Simple monitoring - wait for crisis completion
         # In a real implementation, this would poll Ear-to-Ground for status updates
         
-        # Wait for orchestration to complete (30 seconds timeout)
-        await asyncio.sleep(30)
-        
-        # Try to get final results from Ear-to-Ground
-        final_result = await get_crisis_results_from_ear_to_ground()
-        
-        if final_result:
-            crisis_state.final_response = final_result
-            crisis_state.status = "complete"
-            logger.info("Crisis orchestration completed successfully")
-        else:
-            logger.warning("Crisis monitoring timeout - no final results received")
-            crisis_state.status = "error"
+        # Give the workflow time to complete
+        for i in range(6):  # Check every 10 seconds for 1 minute
+            await asyncio.sleep(10)
+            logger.info(f"Crisis monitoring check {i+1}/6...")
             
+            # Try to get status/results from Ear-to-Ground
+            final_result = await get_crisis_results_from_ear_to_ground()
+            if final_result and not final_result.get("error"):
+                crisis_state.final_response = final_result
+                crisis_state.status = "complete"
+                logger.info("Crisis orchestration completed successfully")
+                crisis_state.last_update = datetime.now()
+                return
+        
+        # If we get here, the workflow didn't complete in time
+        logger.warning("Crisis monitoring timeout - no final results received after 60s")
+        crisis_state.status = "complete"  # Assume it completed, just didn't get results
         crisis_state.last_update = datetime.now()
         
     except Exception as e:

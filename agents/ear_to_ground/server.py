@@ -47,9 +47,15 @@ class EarToGroundServer:
         # Setup signal handlers
         self._setup_signal_handlers()
         
-        # Create A2A application  
+        # Create streaming service (but don't start it automatically)
+        self.streaming_service = TweetStreamingService(None, None)
+        
+        # Create A2A application with streaming service reference
+        agent_executor = EarToGroundAgentExecutor()
+        agent_executor.set_streaming_service(self.streaming_service)
+        
         request_handler = DefaultRequestHandler(
-            agent_executor=EarToGroundAgentExecutor(),
+            agent_executor=agent_executor,
             task_store=InMemoryTaskStore()
         )
         
@@ -67,20 +73,12 @@ class EarToGroundServer:
         )
         userver = Server(config)
         
-        # Create streaming service
-        self.streaming_service = TweetStreamingService(None, None)
-        
-        # Run HTTP server and streaming service concurrently
-        tasks = [
-            asyncio.create_task(userver.serve()),
-            asyncio.create_task(self.streaming_service.start())
-        ]
-        
+        # Run only HTTP server - streaming will be triggered manually
         logger.info(f"HTTP A2A server started on port {self.config.agent_port}")
-        logger.info("Tweet streaming service starting...")
+        logger.info("Ready for manual crisis triggering...")
         
         try:
-            await asyncio.gather(*tasks)
+            await userver.serve()
         except KeyboardInterrupt:
             logger.info("Shutting down Ear-to-Ground agent server")
         except Exception as e:

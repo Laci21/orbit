@@ -48,15 +48,17 @@ class PressSecretaryServer:
         # Create A2A application  
         request_handler = DefaultRequestHandler(
             agent_executor=PressSecretaryAgentExecutor(),
-            agent_card=AGENT_CARD,
             task_store=InMemoryTaskStore()
         )
         
-        self.app = A2AStarletteApplication(request_handler=request_handler)
+        self.app = A2AStarletteApplication(
+            agent_card=AGENT_CARD,
+            http_handler=request_handler
+        )
         
         # Create uvicorn server
         config = Config(
-            app=self.app,
+            app=self.app.build(),
             host="0.0.0.0",
             port=self.config.agent_port,
             log_level="info"

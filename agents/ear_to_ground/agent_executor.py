@@ -34,6 +34,11 @@ class EarToGroundAgentExecutor(AgentExecutor):
     def __init__(self):
         self.agent = EarToGroundAgent()
         self.agent_card = AGENT_CARD.model_dump(mode="json", exclude_none=True)
+        self.streaming_service = None
+        
+    def set_streaming_service(self, streaming_service):
+        """Set the streaming service reference for manual triggering."""
+        self.streaming_service = streaming_service
         
     def _validate_request(self, context: RequestContext) -> Optional[JSONRPCResponse]:
         """Validate incoming request."""
@@ -51,7 +56,8 @@ class EarToGroundAgentExecutor(AgentExecutor):
         # Validate request first
         validation_error = self._validate_request(context)
         if validation_error:
-            await event_queue.enqueue_event(validation_error)
+            # enqueue_event is synchronous; no need to await
+            event_queue.enqueue_event(validation_error)
             return
             
         try:
@@ -62,10 +68,31 @@ class EarToGroundAgentExecutor(AgentExecutor):
             task = context.current_task
             if not task:
                 task = new_task(context.message)
-                await event_queue.enqueue_event(task)
+                # enqueue_event is synchronous; no need to await
+                event_queue.enqueue_event(task)
             
             # Use LangGraph workflow to process the request
+            logger.info(f"Processing request with prompt: {prompt}")
             agent_response = await self.agent.ainvoke(prompt)
+            logger.info(f"Agent response: {agent_response} (type: {type(agent_response)})")
+            
+            # Handle None response
+            if agent_response is None:
+                agent_response = "Error: Agent returned None response"
+                logger.error("Agent ainvoke returned None")
+            
+            # Check if this is a streaming request and trigger streaming service
+            if self.streaming_service and ("stream" in prompt.lower() or "start" in prompt.lower() or "trigger" in prompt.lower()):
+                logger.info("Triggering crisis streaming workflow...")
+                # Start streaming service in background (don't await)
+                import asyncio
+                try:
+                    asyncio.create_task(self.streaming_service.start())
+                    agent_response = f"{agent_response} - Crisis streaming initiated!"
+                    logger.info("Crisis streaming task created successfully")
+                except Exception as e:
+                    logger.error(f"Failed to start streaming service: {e}")
+                    agent_response = f"{agent_response} - Error starting crisis streaming: {e}"
             
             # Create message following Coffee AGNTCY pattern
             message = Message(
@@ -76,7 +103,8 @@ class EarToGroundAgentExecutor(AgentExecutor):
             )
             
             # Enqueue the response using event_queue
-            await event_queue.enqueue_event(message)
+            # enqueue_event is synchronous; no need to await
+            event_queue.enqueue_event(message)
                     
         except Exception as e:
             logger.error(f"An error occurred while processing request: {e}")

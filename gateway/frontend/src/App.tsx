@@ -123,7 +123,7 @@ function App() {
             </div>
             
             {/* Crisis Trigger Button */}
-            {crisisStatus?.status === 'idle' && (
+            {(crisisStatus?.status === 'idle' || crisisStatus?.status === 'error' || crisisStatus?.status === 'complete') && (
               <button
                 onClick={handleTriggerCrisis}
                 disabled={triggering}
