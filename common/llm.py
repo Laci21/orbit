@@ -16,5 +16,11 @@ def get_llm():
         api_version=api_version,
         temperature=0.1,
         max_retries=2,
-        timeout=30
+        timeout=30,
+        model_kwargs={
+            # Ask the OpenAI API to return a pure JSON object so that downstream
+            # agents can safely json.loads() the content without extra parsing.
+            # Supported as of 2023-10-17 preview API and later.
+            "response_format": {"type": "json_object"}
+        }
     )
