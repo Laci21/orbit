@@ -179,6 +179,23 @@ export const StatementDraft: React.FC<StatementDraftProps> = ({
           )}
         </div>
         
+        {/* Fun Marketing Suggestion */}
+        <div className="bg-gradient-to-r from-pink-900/20 to-purple-900/20 border border-pink-500/50 rounded-lg p-3 mb-4">
+          <div className="flex items-center mb-2">
+            <span className="text-lg mr-2">✨</span>
+            <div className="text-xs text-pink-300 font-mono uppercase tracking-wider">
+              Bonus Marketing Idea
+            </div>
+          </div>
+          <div className="text-sm text-gray-300 leading-relaxed mb-2">
+            💡 <strong className="text-pink-400">Celebrity Video Opportunity: </strong>
+            Commission Gwyneth Paltrow for a "Thank you for your interest in Astronomer" video.
+          </div>
+          <div className="text-xs text-gray-400 italic">
+            "Thank you for your interest in Astronomer... where data flies as naturally as our CEO." ✨
+          </div>
+        </div>
+
         <div className="text-center">
           <button
             onClick={onApprove}
