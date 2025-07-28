@@ -32,17 +32,62 @@ class TweetStreamingService:
         # Convert agent card to dict following Coffee AGNTCY pattern
         self.agent_card = AGENT_CARD.model_dump(mode="json", exclude_none=True)
         
+        # Agent progress tracking
+        self.agent_progress: Dict[str, str] = {
+            'ear_to_ground': 'idle',
+            'sentiment_analyst': 'idle', 
+            'fact_checker': 'idle',
+            'risk_score': 'idle',
+            'legal_counsel': 'idle',
+            'press_secretary': 'idle'
+        }
+        
+        # Agent results storage
+        self.agent_results: Dict[str, Dict[str, Any]] = {}
+        
         # Agent endpoints for direct A2A calls
         self.sentiment_analyst_endpoint = os.getenv("SENTIMENT_ANALYST_URL", "http://sentiment-analyst:9002")
         self.fact_checker_endpoint = os.getenv("FACT_CHECKER_URL", "http://fact-checker:9004")
         self.risk_score_endpoint = os.getenv("RISK_SCORE_URL", "http://risk-score:9003")
         self.press_secretary_endpoint = os.getenv("PRESS_SECRETARY_URL", "http://press-secretary:9006")
+    
+    def set_agent_status(self, agent_id: str, status: str) -> None:
+        """Set agent status for progress tracking."""
+        if agent_id in self.agent_progress:
+            self.agent_progress[agent_id] = status
+            logger.info(f"Agent {agent_id} status: {status}")
+        else:
+            logger.warning(f"Unknown agent ID: {agent_id}")
+    
+    def set_agent_result(self, agent_id: str, result: Dict[str, Any]) -> None:
+        """Store agent result data."""
+        self.agent_results[agent_id] = result
+        logger.info(f"Agent {agent_id} result stored")
+    
+    def get_progress(self) -> Dict[str, str]:
+        """Get current agent progress states."""
+        return self.agent_progress.copy()
+    
+    def get_results(self) -> Dict[str, Dict[str, Any]]:
+        """Get all agent results."""
+        return self.agent_results.copy()
+    
+    def reset_agents(self) -> None:
+        """Reset all agents to idle state for new crisis."""
+        for agent_id in self.agent_progress:
+            self.agent_progress[agent_id] = 'idle'
+        self.agent_results.clear()
+        logger.info("All agents reset to idle state")
         
     async def start(self) -> None:
         """Start the tweet streaming service."""
         if self._is_running:
             logger.warning("Tweet streaming service is already running")
             return
+            
+        # Reset agents and set ear-to-ground as active
+        self.reset_agents()
+        self.set_agent_status('ear_to_ground', 'active')
             
         # Wait for server to fully initialize
         await asyncio.sleep(5)
@@ -53,8 +98,10 @@ class TweetStreamingService:
         try:
             await self._load_tweets()
             await self._stream_tweets()
+            self.set_agent_status('ear_to_ground', 'complete')
         except Exception as e:
             logger.error(f"Error in tweet streaming service: {e}")
+            self.set_agent_status('ear_to_ground', 'error')
             raise
         finally:
             self._is_running = False
@@ -229,6 +276,8 @@ class TweetStreamingService:
     
     async def _call_sentiment_analyst(self, crisis_data: Dict[str, Any]) -> Dict[str, Any]:
         """Call the sentiment analyst agent directly via A2A following lungo pattern."""
+        self.set_agent_status('sentiment_analyst', 'active')
+        
         try:
             # Simple prompt with crisis content (following lungo pattern)
             prompt = f"Please analyze the sentiment of this crisis content: {crisis_data['text']}"
@@ -262,21 +311,35 @@ class TweetStreamingService:
                     if response.status == 200:
                         result = await response.json()
                         logger.info(f"Sentiment analyst called successfully for crisis {crisis_data['crisis_id']}")
+                        
+                        # Extract and store sentiment analysis result
+                        sentiment_analysis = self._extract_analysis_data(result, 'sentiment_analysis')
+                        if sentiment_analysis:
+                            self.set_agent_result('sentiment_analyst', sentiment_analysis)
+                        
+                        self.set_agent_status('sentiment_analyst', 'complete')
                         return result
                     else:
                         error_text = await response.text()
                         logger.error(f"Sentiment analyst call failed: {response.status} - {error_text}")
+                        self.set_agent_status('sentiment_analyst', 'error')
                         return {"error": f"HTTP {response.status}: {error_text}"}
                         
         except asyncio.TimeoutError:
             logger.error("Sentiment analyst call timed out")
+            self.set_agent_status('sentiment_analyst', 'error')
             return {"error": "Request timed out"}
         except Exception as e:
             logger.error(f"Error calling sentiment analyst: {e}")
+            self.set_agent_status('sentiment_analyst', 'error')
             return {"error": str(e)}
     
     async def _call_fact_checker(self, crisis_data: Dict[str, Any]) -> Dict[str, Any]:
         """Call the fact checker agent directly via A2A following lungo pattern."""
+        self.set_agent_status('fact_checker', 'active')
+        # Legal counsel will be called by fact checker, so mark it as active too
+        self.set_agent_status('legal_counsel', 'active')
+        
         try:
             # Simple prompt with crisis content for fact checking
             prompt = f"Please verify the claims in this crisis content: {crisis_data['text']}"
@@ -310,21 +373,41 @@ class TweetStreamingService:
                     if response.status == 200:
                         result = await response.json()
                         logger.info(f"Fact checker called successfully for crisis {crisis_data['crisis_id']}")
+                        
+                        # Extract and store fact analysis result
+                        fact_analysis = self._extract_analysis_data(result, 'fact_analysis')
+                        if fact_analysis:
+                            self.set_agent_result('fact_checker', fact_analysis)
+                        
+                        # Extract and store legal counsel result (fact checker calls legal counsel)
+                        legal_analysis = self._extract_analysis_data(result, 'legal_review')
+                        if not legal_analysis:
+                            legal_analysis = self._extract_legal_counsel_data(result)
+                        if legal_analysis:
+                            self.set_agent_result('legal_counsel', legal_analysis)
+                            self.set_agent_status('legal_counsel', 'complete')
+                        
+                        self.set_agent_status('fact_checker', 'complete')
                         return result
                     else:
                         error_text = await response.text()
                         logger.error(f"Fact checker call failed: {response.status} - {error_text}")
+                        self.set_agent_status('fact_checker', 'error')
                         return {"error": f"HTTP {response.status}: {error_text}"}
                         
         except asyncio.TimeoutError:
             logger.error("Fact checker call timed out")
+            self.set_agent_status('fact_checker', 'error')
             return {"error": "Request timed out"}
         except Exception as e:
             logger.error(f"Error calling fact checker: {e}")
+            self.set_agent_status('fact_checker', 'error')
             return {"error": str(e)}
     
     async def _call_risk_score(self, crisis_data: Dict[str, Any], sentiment_result: Dict[str, Any], fact_result: Dict[str, Any]) -> Dict[str, Any]:
         """Call the risk score agent with combined analysis data."""
+        self.set_agent_status('risk_score', 'active')
+        
         try:
             # Use the improved extractor for both analyses
             sentiment_analysis = self._extract_analysis_data(sentiment_result, 'sentiment_analysis')
@@ -380,17 +463,27 @@ class TweetStreamingService:
                     if response.status == 200:
                         result = await response.json()
                         logger.info(f"Risk Score called successfully for crisis {crisis_data.get('crisis_id', 'unknown')}")
+                        
+                        # Extract and store risk analysis result
+                        risk_analysis = self._extract_analysis_data(result, 'risk_assessment')
+                        if risk_analysis:
+                            self.set_agent_result('risk_score', risk_analysis)
+                        
+                        self.set_agent_status('risk_score', 'complete')
                         return result
                     else:
                         error_text = await response.text()
                         logger.error(f"Risk Score call failed: {response.status} - {error_text}")
+                        self.set_agent_status('risk_score', 'error')
                         return {"error": f"HTTP {response.status}: {error_text}"}
                         
         except asyncio.TimeoutError:
             logger.error("Risk Score call timed out")
+            self.set_agent_status('risk_score', 'error')
             return {"error": "Request timed out"}
         except Exception as e:
             logger.error(f"Error calling Risk Score: {e}")
+            self.set_agent_status('risk_score', 'error')
             return {"error": str(e)}
     
     def _extract_legal_counsel_data(self, fact_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -423,6 +516,8 @@ class TweetStreamingService:
                                   fact_result: Dict[str, Any], risk_result: Dict[str, Any], 
                                   legal_result: Dict[str, Any]) -> Dict[str, Any]:
         """Call the Press Secretary agent with all comprehensive crisis analysis data."""
+        self.set_agent_status('press_secretary', 'active')
+        
         try:
             # Extract analysis data from each agent response
             sentiment_analysis = self._extract_analysis_data(sentiment_result, 'sentiment_analysis')
@@ -477,14 +572,23 @@ END_CRISIS_DATA"""
                     if response.status == 200:
                         press_response = await response.json()
                         logger.info(f"Press Secretary response generated for crisis {crisis_data.get('crisis_id', 'unknown')}")
+                        
+                        # Extract and store press secretary result
+                        press_analysis = self._extract_analysis_data(press_response, 'press_response')
+                        if press_analysis:
+                            self.set_agent_result('press_secretary', press_analysis)
+                        
+                        self.set_agent_status('press_secretary', 'complete')
                         return press_response
                     else:
                         error_text = await response.text()
                         logger.error(f"Press Secretary call failed: {response.status} - {error_text}")
+                        self.set_agent_status('press_secretary', 'error')
                         return None
                         
         except Exception as e:
             logger.error(f"Error calling Press Secretary agent: {e}")
+            self.set_agent_status('press_secretary', 'error')
             return None
     
     def _extract_analysis_data(self, agent_result: Dict[str, Any], analysis_key: str) -> Dict[str, Any]:
@@ -599,3 +703,4 @@ END_CRISIS_DATA"""
         """Clear the stored final response (for new crises)."""
         logger.info("Clearing previous final response for new crisis")
         self.final_crisis_response = None
+        self.reset_agents()

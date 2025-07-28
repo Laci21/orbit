@@ -39,6 +39,7 @@ class CrisisState:
         self.final_response: Optional[Dict[str, Any]] = None
         self.last_update: Optional[datetime] = None
         self.agent_progress: Dict[str, str] = {}  # Track which agents are working
+        self.agent_results: Dict[str, Dict[str, Any]] = {}  # Store agent analysis results
 
 # Global crisis state
 crisis_state = CrisisState()
@@ -51,6 +52,7 @@ class CrisisStatusResponse(BaseModel):
     final_response: Optional[Dict[str, Any]]
     last_update: Optional[datetime]
     agent_progress: Dict[str, str] = {}  # Which agents are currently working
+    agent_results: Dict[str, Dict[str, Any]] = {}  # Agent analysis results
 
 class TriggerRequest(BaseModel):
     tweet_content: Optional[str] = "BREAKING: Major allegations surface against company executive. Investigation needed immediately. #CrisisAlert"
@@ -64,7 +66,8 @@ async def get_crisis_status():
         started_at=crisis_state.started_at,
         final_response=crisis_state.final_response,
         last_update=crisis_state.last_update,
-        agent_progress=crisis_state.agent_progress
+        agent_progress=crisis_state.agent_progress,
+        agent_results=crisis_state.agent_results
     )
 
 @app.post("/api/crisis/trigger")
@@ -77,6 +80,8 @@ async def trigger_crisis(request: TriggerRequest):
         crisis_state.started_at = datetime.now()
         crisis_state.final_response = None
         crisis_state.last_update = datetime.now()
+        crisis_state.agent_progress = {'ear_to_ground': 'active'}  # Start with ear-to-ground active
+        crisis_state.agent_results = {}
         
         logger.info(f"Triggering crisis via Ear-to-Ground: {crisis_state.crisis_id}")
         
@@ -164,6 +169,13 @@ async def monitor_crisis_progress():
                 # Update last update time
                 crisis_state.last_update = datetime.now()
                 
+                # Extract progress and partial results from metadata
+                if "progress" in final_result:
+                    crisis_state.agent_progress.update(final_result["progress"])
+                
+                if "partial_results" in final_result:
+                    crisis_state.agent_results.update(final_result["partial_results"])
+                
                 # Check if we found the Press Secretary response
                 if final_result.get("press_secretary_response"):
                     crisis_state.final_response = final_result
@@ -217,32 +229,51 @@ async def get_crisis_results_from_ear_to_ground() -> Optional[Dict[str, Any]]:
             if response.status_code == 200:
                 result = response.json()
                 
-                # Try to extract the final crisis response from Ear-to-Ground metadata
+                # Try to extract the final crisis response and progress from Ear-to-Ground metadata
                 final_crisis_response = None
+                progress_data = None
+                partial_results_data = None
+                
                 if isinstance(result, dict) and "result" in result:
                     result_data = result["result"]
                     if isinstance(result_data, dict) and "metadata" in result_data:
                         metadata = result_data["metadata"]
-                        if isinstance(metadata, dict) and "final_crisis_response" in metadata:
-                            final_crisis_response = metadata["final_crisis_response"]
-                            logger.info("Extracted final crisis response from Ear-to-Ground")
+                        if isinstance(metadata, dict):
+                            # Extract final crisis response
+                            if "final_crisis_response" in metadata:
+                                final_crisis_response = metadata["final_crisis_response"]
+                                logger.info("Extracted final crisis response from Ear-to-Ground")
+                            
+                            # Extract progress and partial results
+                            if "progress" in metadata:
+                                progress_data = metadata["progress"]
+                                logger.debug("Extracted agent progress from Ear-to-Ground")
+                            
+                            if "partial_results" in metadata:
+                                partial_results_data = metadata["partial_results"]
+                                logger.debug("Extracted partial results from Ear-to-Ground")
                  
                 # Only proceed with extraction if we actually have final crisis response data
+                # Always return progress and partial results, even if final response isn't ready
+                result_data = {}
+                
+                if progress_data:
+                    result_data["progress"] = progress_data
+                
+                if partial_results_data:
+                    result_data["partial_results"] = partial_results_data
+                
                 # If we have a final crisis response, extract the Press Secretary data
                 if final_crisis_response:
                     press_secretary_data = extract_press_secretary_response(final_crisis_response)
                     if press_secretary_data:
                         logger.info("✅ Crisis response complete - Press Secretary data ready")
-                        return {"press_secretary_response": press_secretary_data}
+                        result_data["press_secretary_response"] = press_secretary_data
                     else:
                         logger.warning("Press Secretary data not found in final response")
-                else:
-                    # No final crisis response in metadata yet
-                    pass  # Normal during polling - no need to log
                 
-                # Don't return the result if it doesn't have Press Secretary data
-                # This will make the polling continue
-                return None
+                # Return progress/partial results even if final response isn't ready
+                return result_data if result_data else None
             else:
                 logger.error(f"Failed to get results from Ear-to-Ground: {response.status_code}")
                 return None

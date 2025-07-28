@@ -30,47 +30,21 @@ function App() {
   useEffect(() => {
     if (!crisisStatus) return;
 
-    switch (crisisStatus.status) {
-      case 'idle':
-        // Reset all agents to idle
-        setAgents(prev => prev.map(agent => ({ 
-          ...agent, 
-          status: 'idle', 
-          currentAction: undefined 
-        })));
-        break;
-      case 'active':
-        // Crisis is active - show Ear-to-Ground orchestrating
-        updateAgentStatus('ear-to-ground', 'active', 'Orchestrating crisis response...');
-        updateAgentStatus('sentiment-analyzer', 'active', 'Analyzing sentiment...');
-        updateAgentStatus('fact-checker', 'active', 'Fact checking claims...');
-        break;
-      case 'complete':
-        // Crisis complete - show final results
-        setAgents(prev => prev.map(agent => ({ 
-          ...agent, 
-          status: 'complete', 
-          currentAction: undefined 
-        })));
-        break;
-      case 'error':
-        // Handle error state
-        setAgents(prev => prev.map(agent => ({ 
-          ...agent, 
-          status: 'idle', 
-          currentAction: 'Error occurred' 
-        })));
-        break;
-    }
+    const progress = crisisStatus.agent_progress || {};
+    
+    setAgents(prev =>
+      prev.map(agent => {
+        const agentStatus = progress[agent.id] || 'idle';
+        return {
+          ...agent,
+          status: agentStatus as Agent['status'],
+          currentAction: agentStatus === 'active' ? agent.currentAction : undefined
+        };
+      })
+    );
   }, [crisisStatus]);
 
-  const updateAgentStatus = (agentId: string, status: Agent['status'], action?: string) => {
-    setAgents(prev => prev.map(agent => 
-      agent.id === agentId 
-        ? { ...agent, status, currentAction: action }
-        : agent
-    ));
-  };
+
 
   const handleTriggerCrisis = async () => {
     if (triggering) return;
@@ -176,6 +150,7 @@ function App() {
           <SentimentDisplay 
             isActive={crisisStatus?.status === 'active' || crisisStatus?.status === 'complete'} 
             sentimentData={crisisData.sentimentData}
+            liveData={crisisStatus?.agent_results?.sentiment_analyst}
           />
         </div>
 
@@ -183,15 +158,18 @@ function App() {
           <PolicyPanel 
             isActive={crisisStatus?.status === 'active' || crisisStatus?.status === 'complete'} 
             policyData={crisisData.policySnippet}
+            factData={crisisStatus?.agent_results?.fact_checker}
+            legalData={crisisStatus?.agent_results?.legal_counsel}
+            riskData={crisisStatus?.agent_results?.risk_score}
           />
         </div>
 
         <div className="col-span-4">
           <StatementDraft 
-            isActive={crisisStatus?.status === 'complete'}
+            isActive={!!crisisStatus?.agent_results?.press_secretary || crisisStatus?.status === 'complete'}
             isPublished={isPublished}
             draftContent={crisisStatus?.final_response ? "AI-generated response ready for review" : crisisData.draftStatement}
-            finalResponse={crisisStatus?.final_response}
+            finalResponse={crisisStatus?.final_response || (crisisStatus?.agent_results?.press_secretary ? { press_secretary_response: crisisStatus.agent_results.press_secretary } : undefined)}
             onApprove={handleApprove}
           />
         </div>

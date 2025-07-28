@@ -4,9 +4,22 @@ import { TrendingDown } from 'lucide-react';
 interface SentimentDisplayProps {
   isActive: boolean;
   sentimentData: any;
+  liveData?: any;
 }
 
-export const SentimentDisplay: React.FC<SentimentDisplayProps> = ({ isActive, sentimentData }) => {
+export const SentimentDisplay: React.FC<SentimentDisplayProps> = ({ isActive, sentimentData, liveData }) => {
+  // Transform live data to match UI expectations, otherwise use mock data
+  const displayData = liveData ? {
+    overall: liveData.reputational_risk || 'Unknown',
+    score: liveData.overall_sentiment || 0,
+    breakdown: {
+      anger: Math.round(liveData.sentiment_distribution?.negative * 100) || 0,
+      disappointment: Math.round(liveData.sentiment_distribution?.negative * 50) || 0,
+      concern: Math.round(liveData.sentiment_distribution?.neutral * 100) || 0,
+      neutral: Math.round(liveData.sentiment_distribution?.positive * 100) || 0
+    },
+    trendingTerms: liveData.key_emotions || []
+  } : sentimentData;
   if (!isActive) {
     return (
       <div className="bg-gray-900 border border-gray-600 rounded-lg p-4 h-full">
@@ -36,14 +49,14 @@ export const SentimentDisplay: React.FC<SentimentDisplayProps> = ({ isActive, se
         {/* Overall Sentiment */}
         <div className="bg-red-900/30 border border-red-700 rounded p-3">
           <div className="text-red-400 font-mono text-xs mb-1">OVERALL SENTIMENT</div>
-          <div className="text-red-300 font-bold text-lg">{sentimentData.overall}</div>
-          <div className="text-red-400 text-sm">Score: {sentimentData.score}</div>
+          <div className="text-red-300 font-bold text-lg">{displayData.overall}</div>
+          <div className="text-red-400 text-sm">Score: {displayData.score}</div>
         </div>
         
         {/* Sentiment Breakdown */}
         <div className="space-y-2">
           <div className="text-cyan-400 font-mono text-xs font-bold">EMOTION BREAKDOWN</div>
-          {Object.entries(sentimentData.breakdown).map(([emotion, percentage]) => (
+          {displayData.breakdown && Object.entries(displayData.breakdown).map(([emotion, percentage]) => (
             <div key={emotion} className="flex items-center justify-between">
               <span className="text-white text-sm capitalize">{emotion}</span>
               <div className="flex items-center space-x-2">
@@ -58,7 +71,7 @@ export const SentimentDisplay: React.FC<SentimentDisplayProps> = ({ isActive, se
                     style={{ width: `${percentage}%` }}
                   ></div>
                 </div>
-                <span className="text-gray-400 text-xs w-8">{percentage}%</span>
+                <span className="text-gray-400 text-xs w-8">{percentage as number}%</span>
               </div>
             </div>
           ))}
@@ -68,7 +81,7 @@ export const SentimentDisplay: React.FC<SentimentDisplayProps> = ({ isActive, se
         <div>
           <div className="text-cyan-400 font-mono text-xs font-bold mb-2">TRENDING TERMS</div>
           <div className="flex flex-wrap gap-2">
-            {sentimentData.trendingTerms.map((term: string, index: number) => (
+            {displayData.trendingTerms && displayData.trendingTerms.map((term: string, index: number) => (
               <span 
                 key={term}
                 className={`px-2 py-1 rounded text-xs font-mono ${

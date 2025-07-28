@@ -1,7 +1,7 @@
 export interface Agent {
   id: string;
   name: string;
-  status: 'idle' | 'active' | 'complete';
+  status: 'idle' | 'active' | 'complete' | 'error';
   avatar: string;
   description: string;
   currentAction?: string;
@@ -18,33 +18,52 @@ export interface CrisisEvent {
 
 export const initialAgents: Agent[] = [
   {
-    id: 'ear-to-ground',
+    id: 'ear_to_ground',
     name: 'Ear to the Ground',
     status: 'idle',
     avatar: '🛰️',
     description: 'Social Media Monitoring Agent',
-    currentAction: 'Scanning social channels...'
+    currentAction: 'Orchestrating crisis response...'
   },
   {
-    id: 'sentiment-analyzer',
-    name: 'Sentiment Analyzer',
+    id: 'sentiment_analyst',
+    name: 'Sentiment Analyst',
     status: 'idle',
     avatar: '📊',
     description: 'Public Opinion Analysis Agent',
+    currentAction: 'Analyzing sentiment...'
   },
   {
-    id: 'fact-checker',
+    id: 'fact_checker',
     name: 'Fact Checker',
     status: 'idle',
     avatar: '🔍',
     description: 'Information Verification Agent',
+    currentAction: 'Fact checking claims...'
   },
   {
-    id: 'press-secretary',
+    id: 'risk_score',
+    name: 'Risk Score',
+    status: 'idle',
+    avatar: '⚖️',
+    description: 'Risk Assessment Agent',
+    currentAction: 'Assessing crisis risk...'
+  },
+  {
+    id: 'legal_counsel',
+    name: 'Legal Counsel',
+    status: 'idle',
+    avatar: '⚖️',
+    description: 'Legal Compliance Agent',
+    currentAction: 'Reviewing legal implications...'
+  },
+  {
+    id: 'press_secretary',
     name: 'Press Secretary',
     status: 'idle',
     avatar: '📝',
     description: 'Response Generation Agent',
+    currentAction: 'Drafting response...'
   }
 ];
 

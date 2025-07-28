@@ -24,6 +24,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agents }) => {
                 ? 'border-green-400 bg-green-900/30 shadow-xl shadow-green-400/30 scale-105 animate-pulse' 
                 : agent.status === 'complete'
                 ? 'border-blue-400 bg-blue-900/30 shadow-lg shadow-blue-400/20'
+                : agent.status === 'error'
+                ? 'border-red-400 bg-red-900/30 shadow-lg shadow-red-400/20'
                 : 'border-gray-600 bg-gray-800/30'
             }`}
           >
@@ -44,6 +46,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agents }) => {
                   ? 'bg-green-400 animate-pulse shadow-lg shadow-green-400/50' 
                   : agent.status === 'complete'
                   ? 'bg-blue-400 shadow-lg shadow-blue-400/50'
+                  : agent.status === 'error'
+                  ? 'bg-red-400 shadow-lg shadow-red-400/50'
                   : 'bg-gray-600'
               }`}></div>
             </div>
@@ -57,6 +61,12 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agents }) => {
             {agent.status === 'complete' && (
               <div className="text-green-300 text-sm font-mono bg-green-900/20 p-2 rounded border border-green-700">
                 <span className="text-green-400">✓</span> Task completed
+              </div>
+            )}
+            
+            {agent.status === 'error' && (
+              <div className="text-red-300 text-sm font-mono bg-red-900/20 p-2 rounded border border-red-700">
+                <span className="text-red-400">✗</span> Error occurred
               </div>
             )}
           </div>
@@ -78,6 +88,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agents }) => {
           <span className="text-cyan-400 font-mono text-xs font-bold">
             {agents.filter(a => a.status === 'active').length > 0 
               ? 'AGENTS COLLABORATING' 
+              : agents.filter(a => a.status === 'error').length > 0
+              ? 'SYSTEM ERROR DETECTED'
               : agents.filter(a => a.status === 'complete').length > 0
               ? 'MISSION COMPLETE'
               : 'AGENTS STANDBY'

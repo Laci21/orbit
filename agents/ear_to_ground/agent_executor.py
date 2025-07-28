@@ -110,11 +110,16 @@ class EarToGroundAgentExecutor(AgentExecutor):
             # Create message following Coffee AGNTCY pattern
             message_metadata = {"name": self.agent_card["name"]}
             
-            # If we have a final response from streaming service, include it
-            if self.streaming_service and "status" in prompt.lower():
-                final_response = self.streaming_service.get_final_response()
-                if final_response:
-                    message_metadata["final_crisis_response"] = final_response
+            # Always include progress and results from streaming service
+            if self.streaming_service:
+                message_metadata["progress"] = self.streaming_service.get_progress()
+                message_metadata["partial_results"] = self.streaming_service.get_results()
+                
+                # If we have a final response from streaming service, include it
+                if "status" in prompt.lower():
+                    final_response = self.streaming_service.get_final_response()
+                    if final_response:
+                        message_metadata["final_crisis_response"] = final_response
             
             message = Message(
                 messageId=str(uuid4()),

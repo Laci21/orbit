@@ -11,6 +11,8 @@ export interface CrisisStatus {
   started_at: string | null;
   final_response: any | null;
   last_update: string | null;
+  agent_progress: Record<string, 'idle' | 'active' | 'complete' | 'error'>;
+  agent_results: Record<string, any>;
 }
 
 export interface TriggerCrisisRequest {
