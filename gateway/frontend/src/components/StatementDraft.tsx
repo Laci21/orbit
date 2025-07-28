@@ -61,24 +61,24 @@ export const StatementDraft: React.FC<StatementDraftProps> = ({
 
   if (isPublished) {
     return (
-      <div className="bg-green-900/20 border border-green-500 rounded-lg p-4 h-full">
-        <div className="flex items-center mb-4">
-          <CheckCircle className="w-4 h-4 text-green-400 mr-2" />
-          <h3 className="text-green-400 font-mono text-sm font-bold tracking-wider">
+      <div className="bg-gray-900 border-2 border-green-500 rounded-xl p-5 h-full shadow-lg shadow-green-500/20">
+        <div className="flex items-center mb-5">
+          <CheckCircle className="w-5 h-5 text-green-400 mr-3" />
+          <h3 className="text-green-400 font-mono text-lg font-bold tracking-wider">
             STATEMENT PUBLISHED
           </h3>
         </div>
         
-        <div className="bg-green-900/30 border border-green-700 rounded p-3 mb-4">
-          <div className="text-green-300 text-sm leading-relaxed">
+        <div className="bg-green-900/30 border border-green-700 rounded-lg p-4 mb-6">
+          <div className="text-green-300 leading-relaxed">
             {pressResponse?.primary_statement || draftContent}
           </div>
         </div>
         
         <div className="text-center">
-          <div className="inline-flex items-center space-x-2 text-green-400 text-sm">
-            <CheckCircle className="w-4 h-4" />
-            <span className="font-mono">TRANSMISSION COMPLETE</span>
+          <div className="inline-flex items-center space-x-3 text-green-400 bg-green-900/30 px-4 py-2 rounded-lg border border-green-700">
+            <CheckCircle className="w-5 h-5 animate-pulse" />
+            <span className="font-mono font-bold">TRANSMISSION COMPLETE</span>
           </div>
         </div>
       </div>
@@ -88,32 +88,45 @@ export const StatementDraft: React.FC<StatementDraftProps> = ({
   // Active state - show the AI-generated crisis response
   if (pressResponse) {
     return (
-      <div className="bg-gray-900 border border-purple-500 rounded-lg p-4 h-full overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-gray-900 border-2 border-purple-500 rounded-xl p-5 h-full overflow-y-auto shadow-lg shadow-purple-500/20">
+        <div className="flex items-center justify-between mb-5">
           <div className="flex items-center">
-            <Send className="w-4 h-4 text-purple-400 mr-2" />
-            <h3 className="text-purple-400 font-mono text-sm font-bold tracking-wider">
+            <Send className="w-5 h-5 text-purple-400 mr-3" />
+            <h3 className="text-purple-400 font-mono text-lg font-bold tracking-wider">
               CRISIS RESPONSE
             </h3>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-3">
             {pressResponse.legal_compliance ? (
-              <Shield className="w-4 h-4 text-green-400" />
+              <div className="flex items-center space-x-1 bg-green-900/30 px-2 py-1 rounded border border-green-700">
+                <Shield className="w-4 h-4 text-green-400" />
+                <span className="text-xs text-green-400 font-mono">COMPLIANT</span>
+              </div>
             ) : (
-              <AlertTriangle className="w-4 h-4 text-yellow-400" />
+              <div className="flex items-center space-x-1 bg-yellow-900/30 px-2 py-1 rounded border border-yellow-700">
+                <AlertTriangle className="w-4 h-4 text-yellow-400" />
+                <span className="text-xs text-yellow-400 font-mono">REVIEW NEEDED</span>
+              </div>
             )}
-            <span className="text-xs text-gray-400">
-              {Math.round(pressResponse.confidence * 100)}% confident
-            </span>
+            <div className="bg-gray-800/50 px-2 py-1 rounded border border-gray-700">
+              <span className="text-xs text-gray-300 font-mono">
+                {Math.round(pressResponse.confidence * 100)}% confident
+              </span>
+            </div>
           </div>
         </div>
         
         {/* Primary Statement */}
-        <div className="bg-purple-900/20 border border-purple-700 rounded p-3 mb-4">
-          <div className="text-xs text-purple-300 mb-2 font-mono uppercase">
-            Primary Statement ({pressResponse.tone})
+        <div className="bg-purple-900/20 border border-purple-700 rounded-lg p-4 mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm text-purple-300 font-mono uppercase font-bold">
+              Primary Statement
+            </div>
+            <div className="bg-purple-600 text-white px-2 py-1 rounded text-xs font-mono">
+              {pressResponse.tone?.toUpperCase() || 'STANDARD'}
+            </div>
           </div>
-          <div className="text-gray-300 text-sm leading-relaxed">
+          <div className="text-gray-200 leading-relaxed text-lg font-light">
             {pressResponse.primary_statement}
           </div>
         </div>
@@ -196,12 +209,15 @@ export const StatementDraft: React.FC<StatementDraftProps> = ({
           </div>
         </div>
 
-        <div className="text-center">
+        <div className="text-center pt-4 border-t border-purple-700/50">
           <button
             onClick={onApprove}
-            className="bg-purple-600 hover:bg-purple-500 text-white font-mono text-sm px-6 py-2 rounded-lg border border-purple-400 transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/20 transform hover:scale-105"
+            className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-mono font-bold px-8 py-3 rounded-lg border-2 border-purple-400 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/30 transform hover:scale-105 hover:-translate-y-1"
           >
-            APPROVE & PUBLISH
+            <div className="flex items-center space-x-2">
+              <Send className="w-4 h-4" />
+              <span>APPROVE & PUBLISH</span>
+            </div>
           </button>
         </div>
       </div>
@@ -210,26 +226,29 @@ export const StatementDraft: React.FC<StatementDraftProps> = ({
 
   // Fallback to original display
   return (
-    <div className="bg-gray-900 border border-purple-500 rounded-lg p-4 h-full">
-      <div className="flex items-center mb-4">
-        <Send className="w-4 h-4 text-purple-400 mr-2" />
-        <h3 className="text-purple-400 font-mono text-sm font-bold tracking-wider">
+    <div className="bg-gray-900 border-2 border-purple-500 rounded-xl p-5 h-full shadow-lg shadow-purple-500/20">
+      <div className="flex items-center mb-5">
+        <Send className="w-5 h-5 text-purple-400 mr-3" />
+        <h3 className="text-purple-400 font-mono text-lg font-bold tracking-wider">
           DRAFT STATEMENT
         </h3>
       </div>
       
-      <div className="bg-purple-900/20 border border-purple-700 rounded p-3 mb-4">
-        <div className="text-gray-300 text-sm leading-relaxed">
+      <div className="bg-purple-900/20 border border-purple-700 rounded-lg p-4 mb-6">
+        <div className="text-gray-300 leading-relaxed">
           {draftContent}
         </div>
       </div>
       
-      <div className="text-center">
+      <div className="text-center pt-4 border-t border-purple-700/50">
         <button
           onClick={onApprove}
-          className="bg-purple-600 hover:bg-purple-500 text-white font-mono text-sm px-6 py-2 rounded-lg border border-purple-400 transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/20 transform hover:scale-105"
+          className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-mono font-bold px-8 py-3 rounded-lg border-2 border-purple-400 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/30 transform hover:scale-105 hover:-translate-y-1"
         >
-          APPROVE & PUBLISH
+          <div className="flex items-center space-x-2">
+            <Send className="w-4 h-4" />
+            <span>APPROVE & PUBLISH</span>
+          </div>
         </button>
       </div>
     </div>

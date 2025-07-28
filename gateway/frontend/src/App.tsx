@@ -131,7 +131,7 @@ function App() {
       </div>
 
       {/* Main Dashboard */}
-      <div className="p-6 grid grid-cols-12 gap-6 h-[calc(100vh-80px)]">
+      <div className="p-8 grid grid-cols-12 gap-8 h-[calc(100vh-80px)]">
         {/* Left Column - Crisis Alert */}
         <div className="col-span-8">
           <CrisisAlert 
@@ -174,40 +174,7 @@ function App() {
           />
         </div>
 
-        {/* Bottom Row - Status Display */}
-        <div className="col-span-12">
-          <div className="bg-gray-900 border border-cyan-500 rounded-lg p-4">
-            <h3 className="text-cyan-400 text-lg font-bold mb-2">CRISIS STATUS</h3>
-            {loading ? (
-              <p className="text-gray-400">Loading...</p>
-            ) : error ? (
-              <p className="text-red-400">Error: {error}</p>
-            ) : (
-              <div className="grid grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-400">Status:</span>
-                  <span className="ml-2 text-white font-mono">{crisisStatus?.status?.toUpperCase() || 'UNKNOWN'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Crisis ID:</span>
-                  <span className="ml-2 text-white font-mono">{crisisStatus?.crisis_id || 'NONE'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Started:</span>
-                  <span className="ml-2 text-white font-mono">
-                    {crisisStatus?.started_at ? new Date(crisisStatus.started_at).toLocaleTimeString() : 'N/A'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Last Update:</span>
-                  <span className="ml-2 text-white font-mono">
-                    {crisisStatus?.last_update ? new Date(crisisStatus.last_update).toLocaleTimeString() : 'N/A'}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+
       </div>
     </div>
   );
