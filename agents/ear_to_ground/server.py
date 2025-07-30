@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from typing import Optional
@@ -11,6 +12,9 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.tasks import InMemoryTaskStore
 from dotenv import load_dotenv
+
+# SLIM integration imports
+from agntcy_app_sdk.factory import GatewayFactory, TransportTypes
 
 from agents.ear_to_ground.agent_executor import EarToGroundAgentExecutor
 from agents.ear_to_ground.card import AGENT_CARD
@@ -28,6 +32,7 @@ class EarToGroundServer:
     def __init__(self, config: Optional[EarToGroundConfig] = None):
         self.config = config or EarToGroundConfig()
         self.app = None
+        self.bridge = None
         self.streaming_service = None
         self._shutdown_event = asyncio.Event()
         
@@ -64,7 +69,21 @@ class EarToGroundServer:
             http_handler=request_handler
         )
         
-        # Start HTTP server for direct A2A calls
+        # Setup SLIM bridge to central server
+        factory = GatewayFactory()
+        slim_endpoint = os.getenv('SLIM_ENDPOINT', 'slim://slim:46357')
+        slim_transport = factory.create_transport(
+            transport=TransportTypes.SLIM.value,
+            endpoint=slim_endpoint
+        )
+        
+        self.bridge = factory.create_bridge(self.app, transport=slim_transport)
+        
+        # Start SLIM bridge (connects to central server)
+        logger.info(f"Connecting to central SLIM server at {slim_endpoint}")
+        await self.bridge.start()
+        
+        # Start HTTP server for Gateway UI compatibility
         config = Config(
             app=self.app.build(), 
             host="0.0.0.0", 
@@ -73,8 +92,9 @@ class EarToGroundServer:
         )
         userver = Server(config)
         
-        # Run only HTTP server - streaming will be triggered manually
+        # Run HTTP server - streaming will be triggered manually
         logger.info(f"HTTP A2A server started on port {self.config.agent_port}")
+        logger.info(f"SLIM gRPC bridge connected to {slim_endpoint}")
         logger.info("Ready for manual crisis triggering...")
         
         try:
@@ -96,6 +116,10 @@ class EarToGroundServer:
         
         if self.streaming_service:
             self.streaming_service.stop()
+            
+        if self.bridge:
+            # Bridge cleanup would be handled by the factory if needed
+            pass
             
         # Give streaming service time to finish current operations
         await asyncio.sleep(2)

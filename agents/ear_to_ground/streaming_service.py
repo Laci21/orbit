@@ -1,4 +1,4 @@
-"""Tweet streaming service for the Ear-to-Ground agent."""
+"""Tweet streaming service for crisis management."""
 
 import asyncio
 import json
@@ -6,26 +6,24 @@ import logging
 import os
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
+from typing import Dict, Any, List, Optional
 import aiofiles
-import aiohttp
 
 from agents.ear_to_ground.card import AGENT_CARD
+from common.slim_client import call_agent_slim
 
 logger = logging.getLogger("orbit.ear_to_ground_agent.streaming_service")
 
 
-
-
 class TweetStreamingService:
-    """Service responsible for streaming crisis tweets and calling agents directly."""
+    """Service for streaming crisis tweets and coordinating agent responses."""
     
-    def __init__(self, transport, broadcast_topic: Optional[str]):
-        self.transport = transport
-        self.broadcast_topic = broadcast_topic
-        self.tweet_file = os.getenv("ORBIT_TWEET_FILE", "data/tweets_astronomer.json")
-        self.tweet_rate = float(os.getenv("TWEET_STREAM_RATE", "1.0"))
+    def __init__(self, tweet_file: Optional[str] = None, tweet_rate: Optional[float] = None):
+        # Set default tweet file and rate
+        self.tweet_file = tweet_file or os.getenv("ORBIT_TWEET_FILE", "data/tweets_astronomer.json")
+        self.tweet_rate = tweet_rate or 2.0  # seconds between tweets
+        
+        # Internal state
         self.tweets: List[Dict[str, Any]] = []
         self._is_running = False
         self.final_crisis_response: Optional[Dict[str, Any]] = None  # Store final response
@@ -45,11 +43,11 @@ class TweetStreamingService:
         # Agent results storage
         self.agent_results: Dict[str, Dict[str, Any]] = {}
         
-        # Agent endpoints for direct A2A calls
-        self.sentiment_analyst_endpoint = os.getenv("SENTIMENT_ANALYST_URL", "http://sentiment-analyst:9002")
-        self.fact_checker_endpoint = os.getenv("FACT_CHECKER_URL", "http://fact-checker:9004")
-        self.risk_score_endpoint = os.getenv("RISK_SCORE_URL", "http://risk-score:9003")
-        self.press_secretary_endpoint = os.getenv("PRESS_SECRETARY_URL", "http://press-secretary:9006")
+        # Agent endpoints for SLIM communication
+        self.sentiment_analyst_endpoint = os.getenv("SENTIMENT_ANALYST_URL", "slim://sentiment-analyst:50052")
+        self.fact_checker_endpoint = os.getenv("FACT_CHECKER_URL", "slim://fact-checker:50053")
+        self.risk_score_endpoint = os.getenv("RISK_SCORE_URL", "slim://risk-score:50054")
+        self.press_secretary_endpoint = os.getenv("PRESS_SECRETARY_URL", "slim://press-secretary:50056")
     
     def set_agent_status(self, agent_id: str, status: str) -> None:
         """Set agent status for progress tracking."""
@@ -127,26 +125,27 @@ class TweetStreamingService:
         except json.JSONDecodeError as e:
             logger.error(f"Error parsing tweet file: {e}")
             raise
-        except UnicodeDecodeError as e:
-            logger.error(f"Error reading tweet file encoding: {e}")
+        except Exception as e:
+            logger.error(f"Error loading tweets: {e}")
             raise
-            
+    
     def _validate_tweets(self) -> None:
-        """Validate tweet data structure."""
-        required_fields = {'id', 'text', 'author'}
-        
-        for i, tweet in enumerate(self.tweets):
-            if not isinstance(tweet, dict):
-                raise ValueError(f"Tweet {i} is not a dictionary")
-                
-            missing_fields = required_fields - set(tweet.keys())
-            if missing_fields:
-                raise ValueError(f"Tweet {i} missing required fields: {missing_fields}")
-                
-        logger.info(f"Validated {len(self.tweets)} tweets successfully")
+        """Validate tweet structure."""
+        if not self.tweets:
+            raise ValueError("No tweets found in file")
             
+        required_fields = ['id', 'author', 'text', 'timestamp']
+        for i, tweet in enumerate(self.tweets):
+            for field in required_fields:
+                if field not in tweet:
+                    raise ValueError(f"Tweet {i} missing required field: {field}")
+        
+        logger.info("Tweet validation passed")
+    
     async def _stream_tweets(self) -> None:
-        """Stream tweets via SLIM transport."""
+        """Stream tweets and trigger crisis analysis."""
+        logger.info(f"Processing {len(self.tweets)} tweets for crisis analysis...")
+        
         # Process only the first tweet for now to ensure clean flow
         if not self.tweets:
             logger.warning("No tweets available to process")
@@ -180,12 +179,12 @@ class TweetStreamingService:
         logger.info("Single tweet processing completed successfully")
         
     async def _publish_tweet(self, tweet: Dict[str, Any]) -> None:
-        """Process a single tweet by calling agents directly via A2A."""
+        """Process a single tweet by calling agents directly via SLIM."""
         crisis_id = tweet.get("id", "unknown")
         
         logger.info(f"Processing crisis: {crisis_id} from {tweet['author']}")
         
-        # Call agents directly via A2A (no SLIM broadcasting)
+        # Call agents directly via SLIM (no SLIM broadcasting)
         await self._call_agents_directly(tweet, crisis_id)
         
     async def _publish_completion(self) -> None:
@@ -193,7 +192,7 @@ class TweetStreamingService:
         logger.info("All crisis tweets have been processed - no broadcasts sent")
             
     async def _call_agents_directly(self, tweet: Dict[str, Any], crisis_id: str) -> None:
-        """Call sentiment analyst and fact checker agents directly via A2A."""
+        """Call sentiment analyst and fact checker agents directly via SLIM."""
         try:
             # Prepare crisis data for analysis
             crisis_data = {
@@ -275,7 +274,7 @@ class TweetStreamingService:
             logger.error(f"Error calling agents directly: {e}")
     
     async def _call_sentiment_analyst(self, crisis_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the sentiment analyst agent directly via A2A following lungo pattern."""
+        """Call the sentiment analyst agent directly via SLIM following lungo pattern."""
         self.set_agent_status('sentiment_analyst', 'active')
         
         try:
@@ -301,41 +300,35 @@ class TweetStreamingService:
                 "id": 1
             }
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.sentiment_analyst_endpoint}/",
-                    json=request_payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=30)
-                ) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        logger.info(f"Sentiment analyst called successfully for crisis {crisis_data['crisis_id']}")
+            # Call sentiment analyst via SLIM
+            result = await call_agent_slim(
+                self.sentiment_analyst_endpoint,
+                request_payload,
+                timeout=30.0
+            )
+            
+            if "error" not in result:
+                logger.info(f"Sentiment analyst called successfully for crisis {crisis_data['crisis_id']}")
+                
+                # Extract and store sentiment analysis result
+                sentiment_analysis = self._extract_analysis_data(result, 'sentiment_analysis')
+                if sentiment_analysis:
+                    self.set_agent_result('sentiment_analyst', sentiment_analysis)
+                
+                self.set_agent_status('sentiment_analyst', 'complete')
+                return result
+            else:
+                logger.error(f"Sentiment analyst call failed via SLIM: {result.get('error', 'Unknown error')}")
+                self.set_agent_status('sentiment_analyst', 'error')
+                return {"error": result.get("error", "Unknown error")}
                         
-                        # Extract and store sentiment analysis result
-                        sentiment_analysis = self._extract_analysis_data(result, 'sentiment_analysis')
-                        if sentiment_analysis:
-                            self.set_agent_result('sentiment_analyst', sentiment_analysis)
-                        
-                        self.set_agent_status('sentiment_analyst', 'complete')
-                        return result
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Sentiment analyst call failed: {response.status} - {error_text}")
-                        self.set_agent_status('sentiment_analyst', 'error')
-                        return {"error": f"HTTP {response.status}: {error_text}"}
-                        
-        except asyncio.TimeoutError:
-            logger.error("Sentiment analyst call timed out")
-            self.set_agent_status('sentiment_analyst', 'error')
-            return {"error": "Request timed out"}
         except Exception as e:
-            logger.error(f"Error calling sentiment analyst: {e}")
+            logger.error(f"Error calling sentiment analyst via SLIM: {e}")
             self.set_agent_status('sentiment_analyst', 'error')
             return {"error": str(e)}
     
     async def _call_fact_checker(self, crisis_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the fact checker agent directly via A2A following lungo pattern."""
+        """Call the fact checker agent directly via SLIM following lungo pattern."""
         self.set_agent_status('fact_checker', 'active')
         # Legal counsel will be called by fact checker, so mark it as active too
         self.set_agent_status('legal_counsel', 'active')
@@ -363,45 +356,39 @@ class TweetStreamingService:
                 "id": 1
             }
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.fact_checker_endpoint}/",
-                    json=request_payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=30)
-                ) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        logger.info(f"Fact checker called successfully for crisis {crisis_data['crisis_id']}")
-                        
-                        # Extract and store fact analysis result
-                        fact_analysis = self._extract_analysis_data(result, 'fact_analysis')
-                        if fact_analysis:
-                            self.set_agent_result('fact_checker', fact_analysis)
-                        
-                        # Extract and store legal counsel result (fact checker calls legal counsel)
-                        legal_analysis = self._extract_analysis_data(result, 'legal_review')
-                        if not legal_analysis:
-                            legal_analysis = self._extract_legal_counsel_data(result)
-                        if legal_analysis:
-                            self.set_agent_result('legal_counsel', legal_analysis)
-                            self.set_agent_status('legal_counsel', 'complete')
-                        
-                        self.set_agent_status('fact_checker', 'complete')
-                        return result
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Fact checker call failed: {response.status} - {error_text}")
-                        self.set_agent_status('fact_checker', 'error')
-                        return {"error": f"HTTP {response.status}: {error_text}"}
-                        
-        except asyncio.TimeoutError:
-            logger.error("Fact checker call timed out")
-            self.set_agent_status('fact_checker', 'error')
-            return {"error": "Request timed out"}
+            # Call fact checker via SLIM
+            result = await call_agent_slim(
+                self.fact_checker_endpoint,
+                request_payload,
+                timeout=30.0
+            )
+            
+            if "error" not in result:
+                logger.info(f"Fact checker called successfully for crisis {crisis_data['crisis_id']}")
+                
+                # Extract and store fact check analysis result
+                fact_analysis = self._extract_analysis_data(result, 'fact_check')
+                if fact_analysis:
+                    self.set_agent_result('fact_checker', fact_analysis)
+                
+                # Also check for legal review data and store it
+                legal_review = self._extract_analysis_data(result, 'legal_review')
+                if legal_review:
+                    self.set_agent_result('legal_counsel', legal_review)
+                    self.set_agent_status('legal_counsel', 'complete')
+                
+                self.set_agent_status('fact_checker', 'complete')
+                return result
+            else:
+                logger.error(f"Fact checker call failed via SLIM: {result.get('error', 'Unknown error')}")
+                self.set_agent_status('fact_checker', 'error')
+                self.set_agent_status('legal_counsel', 'error')
+                return {"error": result.get("error", "Unknown error")}
+                
         except Exception as e:
-            logger.error(f"Error calling fact checker: {e}")
+            logger.error(f"Error calling fact checker via SLIM: {e}")
             self.set_agent_status('fact_checker', 'error')
+            self.set_agent_status('legal_counsel', 'error')
             return {"error": str(e)}
     
     async def _call_risk_score(self, crisis_data: Dict[str, Any], sentiment_result: Dict[str, Any], fact_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -411,13 +398,12 @@ class TweetStreamingService:
         try:
             # Use the improved extractor for both analyses
             sentiment_analysis = self._extract_analysis_data(sentiment_result, 'sentiment_analysis')
-            fact_analysis = self._extract_analysis_data(fact_result, 'fact_analysis')
+            fact_analysis = self._extract_analysis_data(fact_result, 'fact_check_analysis')
             
             # Validate that we successfully extracted analysis data
             if not sentiment_analysis or not fact_analysis:
                 logger.error(f"Failed to extract analysis data. Sentiment: {bool(sentiment_analysis)}, Fact: {bool(fact_analysis)}")
-                logger.debug(f"Sentiment result structure: {type(sentiment_result)} - {list(sentiment_result.keys()) if isinstance(sentiment_result, dict) else 'not dict'}")
-                logger.debug(f"Fact result structure: {type(fact_result)} - {list(fact_result.keys()) if isinstance(fact_result, dict) else 'not dict'}")
+                # Detailed structures no longer logged to reduce noise
                 return {"error": "Failed to extract analysis data from agent responses"}
             
             # Prepare combined analysis data for Risk Score
@@ -453,34 +439,34 @@ class TweetStreamingService:
                 "id": 1
             }
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.risk_score_endpoint}/",
-                    json=request_payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=30)
-                ) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        logger.info(f"Risk Score called successfully for crisis {crisis_data.get('crisis_id', 'unknown')}")
+            # Call Risk Score via SLIM
+            result = await call_agent_slim(
+                self.risk_score_endpoint,
+                request_payload,
+                timeout=30.0
+            )
+
+            # Check if result is dict and has no error
+            if isinstance(result, dict) and "error" not in result:
+                logger.info(f"Risk Score called successfully for crisis {crisis_data.get('crisis_id', 'unknown')}")
+                
+                # Extract and store risk analysis result
+                risk_analysis = self._extract_analysis_data(result, 'risk_assessment')
+                if risk_analysis:
+                    self.set_agent_result('risk_score', risk_analysis)
+                
+                self.set_agent_status('risk_score', 'complete')
+                return result
+            else:
+                # Handle both dict and string error responses
+                if isinstance(result, dict):
+                    error_msg = result.get('error', 'Unknown error')
+                else:
+                    error_msg = str(result)
+                logger.error(f"Risk Score call failed via SLIM: {error_msg}")
+                self.set_agent_status('risk_score', 'error')
+                return {"error": error_msg}
                         
-                        # Extract and store risk analysis result
-                        risk_analysis = self._extract_analysis_data(result, 'risk_assessment')
-                        if risk_analysis:
-                            self.set_agent_result('risk_score', risk_analysis)
-                        
-                        self.set_agent_status('risk_score', 'complete')
-                        return result
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Risk Score call failed: {response.status} - {error_text}")
-                        self.set_agent_status('risk_score', 'error')
-                        return {"error": f"HTTP {response.status}: {error_text}"}
-                        
-        except asyncio.TimeoutError:
-            logger.error("Risk Score call timed out")
-            self.set_agent_status('risk_score', 'error')
-            return {"error": "Request timed out"}
         except Exception as e:
             logger.error(f"Error calling Risk Score: {e}")
             self.set_agent_status('risk_score', 'error')
@@ -561,30 +547,27 @@ END_CRISIS_DATA"""
                 "id": 1
             }
             
-            # Make HTTP request to Press Secretary agent
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.press_secretary_endpoint}/",
-                    json=request_payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=30)
-                ) as response:
-                    if response.status == 200:
-                        press_response = await response.json()
-                        logger.info(f"Press Secretary response generated for crisis {crisis_data.get('crisis_id', 'unknown')}")
-                        
-                        # Extract and store press secretary result
-                        press_analysis = self._extract_analysis_data(press_response, 'press_response')
-                        if press_analysis:
-                            self.set_agent_result('press_secretary', press_analysis)
-                        
-                        self.set_agent_status('press_secretary', 'complete')
-                        return press_response
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Press Secretary call failed: {response.status} - {error_text}")
-                        self.set_agent_status('press_secretary', 'error')
-                        return None
+            # Call Press Secretary via SLIM
+            result = await call_agent_slim(
+                self.press_secretary_endpoint,
+                request_payload,
+                timeout=30.0
+            )
+
+            if "error" not in result:
+                logger.info(f"Press Secretary response generated for crisis {crisis_data.get('crisis_id', 'unknown')}")
+                
+                # Extract and store press secretary result
+                press_analysis = self._extract_analysis_data(result, 'press_response')
+                if press_analysis:
+                    self.set_agent_result('press_secretary', press_analysis)
+                
+                self.set_agent_status('press_secretary', 'complete')
+                return result
+            else:
+                logger.error(f"Press Secretary call failed via SLIM: {result.get('error', 'Unknown error')}")
+                self.set_agent_status('press_secretary', 'error')
+                return None
                         
         except Exception as e:
             logger.error(f"Error calling Press Secretary agent: {e}")

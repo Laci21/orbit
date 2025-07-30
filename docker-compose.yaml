@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  # SLIM Server (based on lungo pattern)
+  slim:
+    image: ghcr.io/agntcy/slim:0.3.15
+    container_name: slim
+    ports:
+      - "46357:46357"
+    environment:
+      - PASSWORD=${SLIM_GATEWAY_PASSWORD:-dummy_password}
+      - CONFIG_PATH=/config.yaml
+    volumes:
+      - ./config/docker/slim/server-config.yaml:/config.yaml
+    command: ["/slim", "--config", "/config.yaml"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:46357/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
   # AGNTCY Infrastructure Services - SLIM removed (using direct A2A communication)
   # slim:
   #   image: ghcr.io/agntcy/slim:0.3.15
@@ -26,7 +45,7 @@ services:
       dockerfile: docker/Dockerfile.ear-to-ground
     platform: linux/amd64
     ports:
-      - "9001:9001"
+      - "9001:9001"    # HTTP (UI)
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
@@ -34,9 +53,11 @@ services:
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - ORBIT_TWEET_FILE=/app/data/tweets_astronomer.json
       - AGENT_PORT=9001
-      - SENTIMENT_ANALYST_URL=http://sentiment-analyst:9002
-      - FACT_CHECKER_URL=http://fact-checker:9004
-      - RISK_SCORE_URL=http://risk-score:9003
+      - SLIM_ENDPOINT=slim://slim:46357
+      - SENTIMENT_ANALYST_URL=slim://sentiment-analyst
+      - FACT_CHECKER_URL=slim://fact-checker
+      - RISK_SCORE_URL=slim://risk-score
+      - PRESS_SECRETARY_URL=slim://press-secretary
     volumes:
       - ./data:/app/data:ro
       - ./:/app:cached
@@ -50,13 +71,14 @@ services:
       dockerfile: docker/Dockerfile.sentiment-analyst
     platform: linux/amd64
     ports:
-      - "9002:9002"
+      - "9002:9002"    # HTTP (UI)
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AGENT_PORT=9002
+      - SLIM_ENDPOINT=slim://slim:46357
     volumes:
       - ./:/app:cached
     restart: unless-stopped
@@ -69,7 +91,7 @@ services:
       dockerfile: docker/Dockerfile.risk-score
     platform: linux/amd64
     ports:
-      - "9003:9003"
+      - "9003:9003"    # HTTP (UI)
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
@@ -77,7 +99,8 @@ services:
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - CRISIS_THRESHOLD=${CRISIS_THRESHOLD:-7.0}
       - AGENT_PORT=9003
-      - PRESS_SECRETARY_URL=http://press-secretary:9006
+      - SLIM_ENDPOINT=slim://slim:46357
+      - PRESS_SECRETARY_URL=slim://press-secretary
     volumes:
       - ./:/app:cached
     restart: unless-stopped
@@ -90,15 +113,16 @@ services:
       dockerfile: docker/Dockerfile.fact-checker
     platform: linux/amd64
     ports:
-      - "9004:9004"
+      - "9004:9004"    # HTTP (UI)
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AGENT_PORT=9004
-      - LEGAL_COUNSEL_URL=http://legal-counsel:9005
-      - RISK_SCORE_URL=http://risk-score:9003
+      - SLIM_ENDPOINT=slim://slim:46357
+      - LEGAL_COUNSEL_URL=slim://legal-counsel
+      - RISK_SCORE_URL=slim://risk-score
     volumes:
       - ./data:/app/data:ro
       - ./:/app:cached
@@ -112,14 +136,14 @@ services:
       dockerfile: docker/Dockerfile.legal-counsel
     platform: linux/amd64
     ports:
-      - "9005:9005"
+      - "9005:9005"    # HTTP (UI)
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AGENT_PORT=9005
-      - PRESS_SECRETARY_URL=http://press-secretary:9006
+      - SLIM_ENDPOINT=slim://slim:46357
       - LEGAL_RUBRIC_PATH=data/legal_rubric.md
     volumes:
       - ./data:/app/data:ro
@@ -134,13 +158,14 @@ services:
       dockerfile: docker/Dockerfile.press-secretary
     platform: linux/amd64
     ports:
-      - "9006:9006"
+      - "9006:9006"    # HTTP (UI)
     environment:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AGENT_PORT=9006
+      - SLIM_ENDPOINT=slim://slim:46357
     volumes:
       - ./:/app:cached
     restart: unless-stopped
@@ -163,6 +188,7 @@ services:
     volumes:
       - ./:/app:cached  # Enable hot reload for gateway code
     depends_on:
+      - slim
       - ear-to-ground
       - sentiment-analyst
       - risk-score

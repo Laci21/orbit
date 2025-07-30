@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from typing import Optional
@@ -11,6 +12,9 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.tasks import InMemoryTaskStore
 from dotenv import load_dotenv
+
+# SLIM integration imports
+from agntcy_app_sdk.factory import GatewayFactory, TransportTypes
 
 from agents.sentiment_analyst.agent_executor import SentimentAnalystAgentExecutor
 from agents.sentiment_analyst.card import AGENT_CARD
@@ -27,6 +31,7 @@ class SentimentAnalystServer:
     def __init__(self, config: Optional[SentimentAnalystConfig] = None):
         self.config = config or SentimentAnalystConfig()
         self.app = None
+        self.bridge = None
         self._shutdown_event = asyncio.Event()
         
     def _setup_signal_handlers(self) -> None:
@@ -56,28 +61,52 @@ class SentimentAnalystServer:
             http_handler=request_handler
         )
         
-        # Create uvicorn server
-        config = Config(
-            app=self.app.build(),
-            host="0.0.0.0",
-            port=self.config.agent_port,
-            log_level="info"
+        # Setup SLIM bridge to central server
+        factory = GatewayFactory()
+        slim_endpoint = os.getenv('SLIM_ENDPOINT', 'slim://slim:46357')
+        slim_transport = factory.create_transport(
+            transport=TransportTypes.SLIM.value,
+            endpoint=slim_endpoint
         )
         
-        server = Server(config)
+        self.bridge = factory.create_bridge(self.app, transport=slim_transport)
         
-        # Run server until shutdown signal
+        # Start SLIM bridge (connects to central server)
+        logger.info(f"Connecting to central SLIM server at {slim_endpoint}")
+        await self.bridge.start()
+        
+        # Start HTTP server for UI compatibility
+        config = Config(
+            app=self.app.build(), 
+            host="0.0.0.0", 
+            port=self.config.agent_port, 
+            loop="asyncio"
+        )
+        userver = Server(config)
+        logger.info(f"HTTP A2A server started on port {self.config.agent_port}")
+        logger.info(f"SLIM gRPC bridge connected to {slim_endpoint}")
+        
+        # Run HTTP server
         try:
-            await server.serve()
+            await userver.serve()
+        except KeyboardInterrupt:
+            logger.info("Shutting down Sentiment Analyst agent server")
         except Exception as e:
-            logger.error(f"Server error: {e}")
+            logger.error(f"Error running server: {e}")
             raise
-        finally:
-            logger.info("Sentiment Analyst agent server stopped")
             
-    async def stop(self) -> None:
-        """Stop the Sentiment Analyst agent server."""
-        self._shutdown_event.set()
+    async def _wait_for_shutdown(self) -> None:
+        """Wait for shutdown event."""
+        await self._shutdown_event.wait()
+        logger.info("Shutdown event received")
+        
+    async def _cleanup(self) -> None:
+        """Cleanup resources during shutdown."""
+        logger.info("Starting cleanup...")
+        if self.bridge:
+            # Bridge cleanup would be handled by the factory if needed
+            pass
+        logger.info("Cleanup completed")
 
 
 if __name__ == "__main__":

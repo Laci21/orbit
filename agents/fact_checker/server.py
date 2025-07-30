@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from typing import Optional
@@ -11,6 +12,9 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.tasks import InMemoryTaskStore
 from dotenv import load_dotenv
+
+# SLIM integration imports
+from agntcy_app_sdk.factory import GatewayFactory, TransportTypes
 
 from agents.fact_checker.agent_executor import FactCheckerAgentExecutor
 from agents.fact_checker.card import AGENT_CARD
@@ -27,6 +31,7 @@ class FactCheckerServer:
     def __init__(self, config: Optional[FactCheckerConfig] = None):
         self.config = config or FactCheckerConfig()
         self.app = None
+        self.bridge = None
         self._shutdown_event = asyncio.Event()
         
     def _setup_signal_handlers(self) -> None:
@@ -56,9 +61,21 @@ class FactCheckerServer:
             http_handler=request_handler
         )
         
-        # No SLIM transport needed - using direct A2A calls only
+        # Setup SLIM bridge to central server (lungo pattern)
+        factory = GatewayFactory()
+        slim_endpoint = os.getenv('SLIM_ENDPOINT', 'slim://slim:46357')
+        slim_transport = factory.create_transport(
+            transport=TransportTypes.SLIM.value,
+            endpoint=slim_endpoint
+        )
         
-        # Start HTTP server for direct A2A calls only (no SLIM)
+        self.bridge = factory.create_bridge(self.app, transport=slim_transport)
+        
+        # Start SLIM bridge (connects to central server)
+        logger.info(f"Connecting to central SLIM server at {slim_endpoint}")
+        await self.bridge.start()
+        
+        # Start HTTP server for UI compatibility
         config = Config(
             app=self.app.build(), 
             host="0.0.0.0", 
@@ -67,8 +84,9 @@ class FactCheckerServer:
         )
         userver = Server(config)
         logger.info(f"HTTP A2A server started on port {self.config.agent_port}")
+        logger.info(f"SLIM gRPC bridge connected to {slim_endpoint}")
         
-        # Run only the HTTP server (no SLIM bridges needed)
+        # Run HTTP server
         try:
             await userver.serve()
         except KeyboardInterrupt:
@@ -85,6 +103,9 @@ class FactCheckerServer:
     async def _cleanup(self) -> None:
         """Cleanup resources during shutdown."""
         logger.info("Starting cleanup...")
+        if self.bridge:
+            # Bridge cleanup would be handled by the factory if needed
+            pass
         logger.info("Cleanup completed")
 
 

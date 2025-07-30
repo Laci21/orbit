@@ -3,8 +3,8 @@
 import asyncio
 import logging
 from uuid import uuid4
-
-import aiohttp
+from typing import Dict, Any
+import json
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -27,12 +27,13 @@ from a2a.utils import (
 from agents.fact_checker.agent import FactCheckerAgent
 from agents.fact_checker.card import AGENT_CARD
 from agents.fact_checker.config import FactCheckerConfig
+from common.slim_client import call_agent_slim
 
 logger = logging.getLogger("orbit.fact_checker_agent.agent_executor")
 
 
 class FactCheckerAgentExecutor(AgentExecutor):
-    """Agent executor for fact checking crisis content."""
+    """Agent executor for fact-checking crisis content."""
     
     def __init__(self):
         self.agent = FactCheckerAgent()
@@ -51,100 +52,117 @@ class FactCheckerAgentExecutor(AgentExecutor):
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
-        """Execute the agent's logic for fact checking."""
-        logger.debug("Received message request: %s", context.message)
-        
+        """Execute agent request."""
         # Validate request first
         validation_error = self._validate_request(context)
         if validation_error:
+            # enqueue_event is synchronous; no need to await
             event_queue.enqueue_event(validation_error)
             return
             
-        # Extract user input following lungo pattern
-        prompt = context.get_user_input()
-        
-        # Create task if needed
-        task = context.current_task
-        if not task:
-            task = new_task(context.message)
-            event_queue.enqueue_event(task)
-            
         try:
-            # Check if this is a crisis fact checking request
-            if "Please verify the claims in this crisis content:" in prompt:
-                # Extract crisis content and perform fact checking
-                content_start = prompt.find("Please verify the claims in this crisis content:") + len("Please verify the claims in this crisis content:")
-                content = prompt[content_start:].strip()
-                
-                crisis_data = {
-                    "text": content,
-                    "content": content,
-                    "crisis_id": "unknown"  # Could be extracted from prompt if needed
-                }
-                
-                # Perform fact checking analysis
-                fact_result = await self.agent.analyze_crisis_facts(crisis_data)
-                
-                # Create response with fact checking results
-                response_text = f"Fact checking completed. " \
-                               f"Credibility: {fact_result.get('overall_credibility', 'unknown')}, " \
-                               f"Claims verified: {fact_result.get('claims_verified', 0)}/{fact_result.get('claims_identified', 0)}, " \
-                               f"Risk factors: {len(fact_result.get('risk_factors', []))}"
-                
-                # Call Legal Counsel immediately after fact checking and collect the review
-                legal_review = await self._call_legal_counsel(crisis_data, fact_result)
-                
-                # If we received a proper legal review, attach it to the outbound metadata so
-                # downstream services (Risk-Score / Press-Secretary) can consume it without
-                # making another network hop.
-                if legal_review:
-                    fact_result["legal_review"] = legal_review
-                
-                # Store fact result for potential Risk Score call later
-                # (Risk Score will be called separately by Sentiment Analyst)
-                
-                message = Message(
-                    messageId=str(uuid4()),
-                    role=Role.agent,
-                    metadata={
-                        "name": self.agent_card["name"],
-                        "fact_analysis": fact_result,
-                        # Include the legal review at the top level for easier extraction
-                        **({"legal_review": legal_review} if legal_review else {}),
-                        "crisis_id": crisis_data.get("crisis_id")
-                    },
-                    parts=[Part(TextPart(text=response_text))]
-                )
-            else:
-                # Regular workflow processing for general queries
-                output = await self.agent.ainvoke(prompt)
-                
-                # Create standard response message
-                message = Message(
-                    messageId=str(uuid4()),
-                    role=Role.agent,
-                    metadata={"name": self.agent_card["name"]},
-                    parts=[Part(TextPart(text=output))]
-                )
+            # Extract user input using their pattern
+            prompt = context.get_user_input()
             
+            # Create task if needed
+            task = context.current_task
+            if not task:
+                task = new_task(context.message)
+                # enqueue_event is synchronous; no need to await
+                event_queue.enqueue_event(task)
+            
+            # Use LangGraph workflow to process the request
+            logger.info(f"Processing fact check request with prompt: {prompt}")
+            agent_response = await self.agent.ainvoke(prompt)
+            logger.info(f"Agent response: {agent_response} (type: {type(agent_response)})")
+            
+            # Handle None response
+            if agent_response is None:
+                agent_response = "Error: Agent returned None response"
+                logger.error("Agent ainvoke returned None")
+            
+            # ------------------------------------------------------------------
+            # Build **structured** fact_check_data so downstream agents (Risk Score)
+            # can always rely on a dict, never a plain string.
+            # ------------------------------------------------------------------
+            fact_check_data: Dict[str, Any]
+            try:
+                if isinstance(agent_response, dict):
+                    # Already structured → use as-is
+                    fact_check_data = {"fact_check_analysis": agent_response}
+                elif isinstance(agent_response, str):
+                    # Try to parse JSON string returned by LLM
+                    parsed: Dict[str, Any] | None = None
+                    try:
+                        parsed_json = json.loads(agent_response)
+                        if isinstance(parsed_json, dict):
+                            parsed = parsed_json
+                    except Exception:
+                        parsed = None
+                    if parsed is not None:
+                        fact_check_data = {"fact_check_analysis": parsed}
+                    else:
+                        # Fallback – wrap raw text so it is still a dict
+                        fact_check_data = {"fact_check_analysis": {"raw_text": agent_response}}
+                else:
+                    # Unexpected type – store stringified version
+                    fact_check_data = {"fact_check_analysis": {"raw_text": str(agent_response)}}
+
+                logger.info(f"Structured fact check data: {fact_check_data}")
+            except Exception as e:
+                logger.error(f"Error structuring fact check data: {e}")
+                fact_check_data = {"fact_check_analysis": {"raw_text": str(agent_response)}, "error": str(e)}
+            
+            # Call Legal Counsel for legal review if we have fact check analysis
+            legal_review_data = None
+            if fact_check_data:
+                legal_review_data = await self._call_legal_counsel(prompt, fact_check_data)
+            
+            # Create message metadata with both fact check and legal review data
+            message_metadata = {
+                "name": self.agent_card["name"],
+                "fact_check": fact_check_data
+            }
+            
+            # Include legal review in metadata if available
+            if legal_review_data:
+                message_metadata["legal_review"] = legal_review_data
+            
+            message = Message(
+                messageId=str(uuid4()),
+                role=Role.agent,
+                metadata=message_metadata,
+                parts=[Part(TextPart(text=agent_response))]
+            )
+            
+            # Enqueue the response using event_queue
+            # enqueue_event is synchronous; no need to await
             event_queue.enqueue_event(message)
                     
         except Exception as e:
-            logger.error(f"An error occurred while processing fact check: {e}")
+            logger.error(f"An error occurred while processing request: {e}")
             raise ServerError(error=InternalError()) from e
     
-    async def _call_legal_counsel(self, crisis_data: dict, fact_result: dict) -> dict | None:
-        """Call Legal Counsel agent immediately after fact checking and return the parsed legal review."""
+    async def _call_legal_counsel(self, original_prompt: str, fact_check_data: dict) -> dict:
+        """Call the Legal Counsel agent for legal review using SLIM."""
         try:
-            prompt = f"Please review the legal implications of this crisis based on fact checking results: {fact_result['overall_credibility']} credibility, claims: {fact_result.get('fact_checks', [])}"
+            # Enhanced prompt that includes both original content and fact check results
+            prompt = f"""
+Please provide a legal review of this crisis content and its fact check analysis:
+
+Original content: {original_prompt}
+Fact check analysis: {fact_check_data.get('fact_check_analysis', 'No analysis available')}
+
+Please assess legal risks, compliance issues, and provide recommendations.
+"""
             
-            # JSON-RPC request payload for Legal Counsel
+            # JSON-RPC request payload for A2A communication
             request_payload = {
                 "jsonrpc": "2.0",
                 "method": "message/send",
                 "params": {
                     "message": {
-                        "messageId": f"legal-review-{crisis_data.get('crisis_id', 'unknown')}",
+                        "messageId": f"legal-review-{uuid4()}",
                         "role": "user",
                         "parts": [
                             {
@@ -157,46 +175,65 @@ class FactCheckerAgentExecutor(AgentExecutor):
                 "id": 1
             }
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.config.legal_counsel_endpoint}/",
-                    json=request_payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=30)
-                ) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        logger.info(f"Legal Counsel called successfully for crisis {crisis_data.get('crisis_id', 'unknown')}")
-
-                        # Try to extract legal_review from the response structure
-                        try:
-                            # Expected path: result -> result -> message -> metadata -> legal_review
-                            if (
-                                isinstance(result, dict)
-                                and "result" in result
-                                and isinstance(result["result"], dict)
-                            ):
-                                inner = result["result"]
-                                if (
-                                    "metadata" in inner
-                                    and "legal_review" in inner["metadata"]
-                                ):
-                                    return inner["metadata"]["legal_review"]
-                            else:
-                                logger.debug("Legal Counsel response does not have expected 'result' structure")
-                        except Exception as exc:
-                            logger.debug(f"Could not parse legal review from response: {exc}")
-                        return None
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Legal Counsel call failed: {response.status} - {error_text}")
-                        return None
-        except asyncio.TimeoutError:
-            logger.error("Legal Counsel call timed out")
-            return None
+            # Call legal counsel via SLIM
+            result = await call_agent_slim(
+                self.config.legal_counsel_endpoint,
+                request_payload,
+                timeout=30.0
+            )
+            
+            if "error" not in result:
+                logger.info("Legal Counsel called successfully via SLIM")
+                
+                # Try to extract legal_review from the response structure
+                try:
+                    # Expected path: result -> result -> message -> metadata -> legal_review
+                    if (
+                        isinstance(result, dict)
+                        and "result" in result
+                        and isinstance(result["result"], dict)
+                    ):
+                        inner = result["result"]
+                        if (
+                            "message" in inner
+                            and isinstance(inner["message"], dict)
+                            and "metadata" in inner["message"]
+                            and isinstance(inner["message"]["metadata"], dict)
+                        ):
+                            metadata = inner["message"]["metadata"]
+                            if "legal_review" in metadata:
+                                legal_review = metadata["legal_review"]
+                                logger.info(f"Extracted legal review: {legal_review}")
+                                return legal_review
+                    
+                    # Fallback: extract text content as legal review
+                    if (
+                        isinstance(result, dict)
+                        and "result" in result
+                        and isinstance(result["result"], dict)
+                        and "message" in result["result"]
+                        and isinstance(result["result"]["message"], dict)
+                        and "parts" in result["result"]["message"]
+                    ):
+                        parts = result["result"]["message"]["parts"]
+                        if parts and len(parts) > 0 and "text" in parts[0]:
+                            legal_text = parts[0]["text"]
+                            logger.info(f"Using text content as legal review: {legal_text}")
+                            return {"legal_analysis": legal_text}
+                    
+                    logger.warning(f"Could not extract legal review from response structure: {result}")
+                    return {"legal_analysis": str(result)}
+                    
+                except Exception as e:
+                    logger.error(f"Error extracting legal review data: {e}")
+                    return {"legal_analysis": str(result), "extraction_error": str(e)}
+            else:
+                logger.error(f"Legal Counsel call failed via SLIM: {result.get('error', 'Unknown error')}")
+                return {"error": result.get("error", "Unknown error")}
+                
         except Exception as e:
-            logger.error(f"Error calling Legal Counsel: {e}")
-            return None
+            logger.error(f"Error calling Legal Counsel via SLIM: {e}")
+            return {"error": str(e)}
             
     async def cancel(
         self, 

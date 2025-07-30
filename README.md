@@ -62,6 +62,22 @@ orbit/
 └── docker-compose.yaml  # AGNTCY infrastructure
 ```
 
+## 🔌 Inter-Agent Communication via SLIM
+
+Orbit’s six AI agents now talk to each other exclusively over **SLIM** (Secure Low-latency Interactive Messaging).
+
+* A single SLIM broker runs inside Docker (`slim` service, port **46357**)
+* Each agent connects to that broker at start-up (`SLIM gRPC bridge connected`)
+* Communication uses **request-reply** pattern
+* SLIM transport & clients are provided by **[AGNTCY App-SDK](https://github.com/agntcy/app-sdk)**, so no custom transport code was needed
+* Implementation follows the proven pattern from the **[coffeeAgntcy *lungo* example](https://github.com/agntcy/coffeeAgntcy/tree/main/coffeeAGNTCY/coffee_agents/lungo)**
+* Payloads remain JSON-RPC 2.0, simply wrapped in gRPC frames
+* The legacy HTTP ports (9001-9006) now exist *only* so App-SDK can fetch `/.well-known/agent.json`; no business logic travels over HTTP anymore.
+
+For the full migration steps see [`docs/slim-migration.md`](docs/slim-migration.md).
+
+---
+
 ## 🤖 Agent Workflow
 
 1. **Ear-to-Ground** streams crisis tweets from JSON data
