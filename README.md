@@ -62,6 +62,56 @@ orbit/
 └── docker-compose.yaml  # AGNTCY infrastructure
 ```
 
+### High-level Architecture
+
+```mermaid
+flowchart LR
+    subgraph Frontend
+        UI["UI (React)"]
+    end
+    subgraph Backend
+        GW["Gateway API\nFastAPI (8000)"]
+        ETG["Ear-to-Ground\nOrchestrator (9001)"]
+    end
+
+    %% Agent side (each agent has an SDK bridge)
+    subgraph Agents
+        SA["Sentiment Analyst"]
+        FC["Fact Checker"]
+        RS["Risk Score"]
+        LC["Legal Counsel"]
+        PS["Press Secretary"]
+    end
+
+    %% Transport Layer
+    subgraph "Transport Layer"
+        SDK_TX["App-SDK\nwrap JSON-RPC → gRPC"]
+        Broker[("SLIM Broker\n(gRPC 46357)")]
+        SDK_RX["App-SDK\nunwrap gRPC → JSON-RPC"]
+    end
+
+    %% Front
+    UI -->|REST| GW
+    GW -->|REST| ETG
+
+    %% Outbound call
+    ETG -->|"JSON-RPC (A2A)"| SDK_TX
+    SDK_TX -->|gRPC| Broker
+
+    %% Inbound to one sample agent (pattern same for all)
+    Broker -->|gRPC| SDK_RX
+    SDK_RX -->|"JSON-RPC (A2A)"| SA
+
+    %% Dashed lines to show other agents use same pattern
+    Broker -. gRPC .-> FC
+    Broker -. gRPC .-> RS
+    Broker -. gRPC .-> LC
+    Broker -. gRPC .-> PS
+
+    classDef box fill:#ffffff,stroke:#333,stroke-width:2px
+    class UI,GW,ETG,SA,FC,RS,LC,PS,Broker,SDK_TX,SDK_RX box
+```
+
 ## 🔌 Inter-Agent Communication via SLIM
 
 Orbit’s six AI agents now talk to each other exclusively over **SLIM** (Secure Low-latency Interactive Messaging).
